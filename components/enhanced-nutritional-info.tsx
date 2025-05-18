@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge"
 
 export type EnhancedNutritionData = {
   calories: number
-  macronutrients: {
+  macronutrients?: {
     protein: number
     carbs: number
     fat: number
@@ -33,6 +33,12 @@ export type EnhancedNutritionData = {
   }
   servingSize?: string
   servings?: number
+  // For backward compatibility with older saved recipes
+  protein?: number
+  carbs?: number
+  fat?: number
+  fiber?: number
+  sugar?: number
 }
 
 interface EnhancedNutritionalInfoProps {
@@ -48,12 +54,18 @@ export default function EnhancedNutritionalInfo({
 }: EnhancedNutritionalInfoProps) {
   const [expanded, setExpanded] = useState(false)
 
+  // Handle both new format (with macronutrients object) and old format (with direct properties)
+  const protein = data.macronutrients?.protein ?? data.protein ?? 0
+  const carbs = data.macronutrients?.carbs ?? data.carbs ?? 0
+  const fat = data.macronutrients?.fat ?? data.fat ?? 0
+  const fiber = data.macronutrients?.fiber ?? data.fiber ?? 0
+  const sugar = data.macronutrients?.sugar ?? data.sugar ?? 0
+
   // Calculate macronutrient percentages
-  const { protein, carbs, fat } = data.macronutrients
   const totalMacros = protein + carbs + fat
-  const proteinPercentage = Math.round((protein / totalMacros) * 100)
-  const carbsPercentage = Math.round((carbs / totalMacros) * 100)
-  const fatPercentage = Math.round((fat / totalMacros) * 100)
+  const proteinPercentage = totalMacros > 0 ? Math.round((protein / totalMacros) * 100) : 33
+  const carbsPercentage = totalMacros > 0 ? Math.round((carbs / totalMacros) * 100) : 34
+  const fatPercentage = totalMacros > 0 ? Math.round((fat / totalMacros) * 100) : 33
 
   // Group micronutrients for better display
   const vitaminGroups = data.vitamins
@@ -169,25 +181,25 @@ export default function EnhancedNutritionalInfo({
                       <div className="grid grid-cols-2 gap-4 pt-2">
                         <div className="text-sm">
                           <span className="text-muted-foreground">Fiber: </span>
-                          <span className="font-medium">{data.macronutrients.fiber}g</span>
+                          <span className="font-medium">{fiber}g</span>
                         </div>
                         <div className="text-sm">
                           <span className="text-muted-foreground">Sugar: </span>
-                          <span className="font-medium">{data.macronutrients.sugar}g</span>
+                          <span className="font-medium">{sugar}g</span>
                         </div>
-                        {data.macronutrients.saturatedFat !== undefined && (
+                        {data.macronutrients?.saturatedFat !== undefined && (
                           <div className="text-sm">
                             <span className="text-muted-foreground">Saturated Fat: </span>
                             <span className="font-medium">{data.macronutrients.saturatedFat}g</span>
                           </div>
                         )}
-                        {data.macronutrients.cholesterol !== undefined && (
+                        {data.macronutrients?.cholesterol !== undefined && (
                           <div className="text-sm">
                             <span className="text-muted-foreground">Cholesterol: </span>
                             <span className="font-medium">{data.macronutrients.cholesterol}mg</span>
                           </div>
                         )}
-                        {data.macronutrients.sodium !== undefined && (
+                        {data.macronutrients?.sodium !== undefined && (
                           <div className="text-sm">
                             <span className="text-muted-foreground">Sodium: </span>
                             <span className="font-medium">{data.macronutrients.sodium}mg</span>

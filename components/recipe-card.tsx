@@ -6,12 +6,13 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
-import { Clock, Flame, Save, Trash2, FileText } from "lucide-react"
+import { Clock, Flame, Save, Trash2 } from "lucide-react"
 import UnitToggle from "./unit-toggle"
-import NutritionalInfo, { type NutritionData } from "./nutritional-info"
+import type { NutritionData } from "./nutritional-info"
+import EnhancedNutritionalInfo, { type EnhancedNutritionData } from "./enhanced-nutritional-info"
 import { convertIngredients } from "@/utils/unit-conversion"
 import LoginPrompt from "./login-prompt"
-import MarkdownRenderer from "./markdown-renderer"
+import { createDefaultNutrition } from "@/utils/nutrition-helpers"
 
 export type RecipeProps = {
   id?: string
@@ -26,9 +27,12 @@ export type RecipeProps = {
   isSaving?: boolean
   isDeleting?: boolean
   nutritionData?: NutritionData
+  enhancedNutritionData?: EnhancedNutritionData
   isAuthenticated?: boolean
   currentPath?: string
   markdown?: string
+  isNutritionLoading?: boolean
+  nutritionError?: string | null
 }
 
 export default function RecipeCard({
@@ -44,14 +48,16 @@ export default function RecipeCard({
   isSaving,
   isDeleting,
   nutritionData,
+  enhancedNutritionData,
   isAuthenticated = true,
   currentPath = "/generate",
   markdown,
+  isNutritionLoading = false,
+  nutritionError = null,
 }: RecipeProps) {
   const [currentUnits, setCurrentUnits] = useState<"metric" | "imperial">("metric")
   const [displayedIngredients, setDisplayedIngredients] = useState(ingredients)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
-  const [viewMode, setViewMode] = useState<"standard" | "markdown">(markdown ? "standard" : "standard")
 
   const handleUnitToggle = (system: "metric" | "imperial") => {
     setCurrentUnits(system)
@@ -66,27 +72,8 @@ export default function RecipeCard({
     }
   }
 
-  // Default nutrition data if not provided
-  const defaultNutrition: NutritionData = nutritionData || {
-    calories,
-    protein: Math.round((calories * 0.2) / 4), // 20% of calories from protein
-    carbs: Math.round((calories * 0.5) / 4), // 50% of calories from carbs
-    fat: Math.round((calories * 0.3) / 9), // 30% of calories from fat
-    fiber: Math.round((calories * 0.05) / 2), // Estimated fiber
-    sugar: Math.round((calories * 0.1) / 4), // Estimated sugar
-    vitamins: {
-      "Vitamin A": 15,
-      "Vitamin C": 25,
-      "Vitamin D": 10,
-      "Vitamin E": 8,
-    },
-    minerals: {
-      Calcium: 12,
-      Iron: 18,
-      Potassium: 10,
-      Magnesium: 15,
-    },
-  }
+  // Use provided nutrition data or create default based on calories
+  const displayNutritionData = nutritionData || createDefaultNutrition(calories)
 
   return (
     <>
@@ -108,17 +95,6 @@ export default function RecipeCard({
                 </CardDescription>
               </div>
               <div className="flex items-center gap-2">
-                {markdown && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => setViewMode(viewMode === "standard" ? "markdown" : "standard")}
-                    aria-label={viewMode === "standard" ? "View markdown" : "View standard"}
-                    className="relative"
-                  >
-                    <FileText className="h-4 w-4" />
-                  </Button>
-                )}
                 {onSave && (
                   <Button
                     variant="ghost"
@@ -155,53 +131,29 @@ export default function RecipeCard({
             </div>
           </CardHeader>
 
-          {viewMode === "markdown" && markdown ? (
-            <CardContent>
-              <MarkdownRenderer markdown={markdown} />
-            </CardContent>
-          ) : (
-            <>
-              <CardContent className="pb-2">
-                <div className="flex justify-between items-center mb-4">
-                  <h3 className="font-medium text-sm">Recipe Details</h3>
-                  <UnitToggle onToggle={handleUnitToggle} />
-                </div>
+          <CardContent className="pb-2">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="font-medium text-sm">Recipe Details</h3>
+              <UnitToggle onToggle={handleUnitToggle} />
+            </div>
 
-                <Tabs defaultValue="ingredients" className="w-full">
-                  <TabsList className="grid w-full grid-cols-2 mb-4">
-                    <TabsTrigger value="ingredients">Ingredients</TabsTrigger>
-                    <TabsTrigger value="instructions">Instructions</TabsTrigger>
-                  </TabsList>
+            <Tabs defaultValue="ingredients" className="w-full">
+              <TabsList className="grid w-full grid-cols-2 mb-4">
+                <TabsTrigger value="ingredients">Ingredients</TabsTrigger>
+                <TabsTrigger value="instructions">Instructions</TabsTrigger>
+              </TabsList>
 
-                  <TabsContent value="ingredients" className="space-y-4">
-                    <ul className="list-disc pl-5 space-y-2">
-                      <AnimatePresence mode="wait">
-                        <motion.div
-                          key={currentUnits}
-                          initial={{ opacity: 0, x: 20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          exit={{ opacity: 0, x: -20 }}
-                          transition={{ duration: 0.2 }}
-                        >
-                          {displayedIngredients.map((ingredient, index) => (
-                            <motion.li
-                              key={index}
-                              initial={{ opacity: 0, y: 10 }}
-                              animate={{ opacity: 1, y: 0 }}
-                              transition={{ delay: index * 0.05 }}
-                              className="leading-relaxed"
-                            >
-                              {ingredient}
-                            </motion.li>
-                          ))}
-                        </motion.div>
-                      </AnimatePresence>
-                    </ul>
-                  </TabsContent>
-
-                  <TabsContent value="instructions" className="space-y-4">
-                    <ol className="list-decimal pl-5 space-y-3">
-                      {instructions.map((instruction, index) => (
+              <TabsContent value="ingredients" className="space-y-4">
+                <ul className="list-disc pl-5 space-y-2">
+                  <AnimatePresence mode="wait">
+                    <motion.div
+                      key={currentUnits}
+                      initial={{ opacity: 0, x: 20 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -20 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      {displayedIngredients.map((ingredient, index) => (
                         <motion.li
                           key={index}
                           initial={{ opacity: 0, y: 10 }}
@@ -209,19 +161,47 @@ export default function RecipeCard({
                           transition={{ delay: index * 0.05 }}
                           className="leading-relaxed"
                         >
-                          {instruction}
+                          {ingredient}
                         </motion.li>
                       ))}
-                    </ol>
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
+                    </motion.div>
+                  </AnimatePresence>
+                </ul>
+              </TabsContent>
 
-              <CardContent className="pt-2">
-                <NutritionalInfo data={defaultNutrition} />
-              </CardContent>
-            </>
-          )}
+              <TabsContent value="instructions" className="space-y-4">
+                <ol className="list-decimal pl-5 space-y-3">
+                  {instructions.map((instruction, index) => (
+                    <motion.li
+                      key={index}
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: index * 0.05 }}
+                      className="leading-relaxed"
+                    >
+                      {instruction}
+                    </motion.li>
+                  ))}
+                </ol>
+              </TabsContent>
+            </Tabs>
+          </CardContent>
+
+          <CardContent className="pt-2">
+            {enhancedNutritionData ? (
+              <EnhancedNutritionalInfo
+                data={enhancedNutritionData}
+                isLoading={isNutritionLoading}
+                error={nutritionError}
+              />
+            ) : (
+              nutritionData && (
+                <div className="text-sm text-muted-foreground">
+                  <p>Basic nutrition information available</p>
+                </div>
+              )
+            )}
+          </CardContent>
 
           {created_at && (
             <CardFooter className="text-xs text-muted-foreground pt-2">

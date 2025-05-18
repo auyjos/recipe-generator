@@ -31,9 +31,9 @@ export default function NutritionalInfo({ data }: NutritionalInfoProps) {
 
   // Calculate macronutrient percentages
   const totalMacros = data.protein + data.carbs + data.fat
-  const proteinPercentage = Math.round((data.protein / totalMacros) * 100)
-  const carbsPercentage = Math.round((data.carbs / totalMacros) * 100)
-  const fatPercentage = Math.round((data.fat / totalMacros) * 100)
+  const proteinPercentage = Math.round((data.protein / totalMacros) * 100) || 0
+  const carbsPercentage = Math.round((data.carbs / totalMacros) * 100) || 0
+  const fatPercentage = Math.round((data.fat / totalMacros) * 100) || 0
 
   return (
     <Card className="w-full overflow-hidden">
@@ -117,21 +117,31 @@ export default function NutritionalInfo({ data }: NutritionalInfoProps) {
 
               <TabsContent value="micros" className="pt-4">
                 <div className="grid grid-cols-2 gap-y-2">
-                  {data.vitamins &&
+                  {data.vitamins && Object.keys(data.vitamins).length > 0 ? (
                     Object.entries(data.vitamins).map(([vitamin, value]) => (
                       <div key={vitamin} className="text-sm">
                         <span className="text-muted-foreground">{vitamin}: </span>
                         <span className="font-medium">{value}%</span>
                       </div>
-                    ))}
+                    ))
+                  ) : (
+                    <div className="col-span-2 text-center text-sm text-muted-foreground py-2">
+                      No vitamin data available
+                    </div>
+                  )}
 
-                  {data.minerals &&
+                  {data.minerals && Object.keys(data.minerals).length > 0 ? (
                     Object.entries(data.minerals).map(([mineral, value]) => (
                       <div key={mineral} className="text-sm">
                         <span className="text-muted-foreground">{mineral}: </span>
                         <span className="font-medium">{value}%</span>
                       </div>
-                    ))}
+                    ))
+                  ) : (
+                    <div className="col-span-2 text-center text-sm text-muted-foreground py-2">
+                      No mineral data available
+                    </div>
+                  )}
                 </div>
               </TabsContent>
             </Tabs>

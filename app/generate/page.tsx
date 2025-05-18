@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
-import { Loader2, Sparkles, FileText } from "lucide-react"
+import { Loader2, Sparkles } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import RecipeCard from "@/components/recipe-card"
 import type { NutritionData } from "@/components/nutritional-info"
@@ -16,10 +16,9 @@ import type { User } from "@supabase/supabase-js"
 import IngredientInput from "@/components/ingredient-input"
 import MealTypeSelector, { type MealType } from "@/components/meal-type-selector"
 import { Separator } from "@/components/ui/separator"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import MarkdownRenderer from "@/components/markdown-renderer"
 import CalorieInput from "@/components/calorie-input"
-import EnhancedNutritionalInfo, { type EnhancedNutritionData } from "@/components/enhanced-nutritional-info"
+import type { EnhancedNutritionData } from "@/components/enhanced-nutritional-info"
+import { enhancedToBasicNutrition, createDefaultNutrition } from "@/utils/nutrition-helpers"
 
 type Recipe = {
   title: string
@@ -27,7 +26,7 @@ type Recipe = {
   cooking_time: string
   ingredients: string[]
   instructions: string[]
-  nutritionData?: NutritionData
+  nutritionData: NutritionData
   enhancedNutritionData?: EnhancedNutritionData
   markdown?: string
 }
@@ -45,11 +44,10 @@ export default function GenerateRecipePage() {
   const [error, setError] = useState<string | null>(null)
   const [nutritionError, setNutritionError] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
-  const [viewMode, setViewMode] = useState<"card" | "markdown">("card")
-  const [enhancedNutrition, setEnhancedNutrition] = useState<EnhancedNutritionData | null>(null)
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
+  const [enhancedNutrition, setEnhancedNutrition] = useState<EnhancedNutritionData | null>(null)
 
   // Check authentication status
   useEffect(() => {
@@ -126,28 +124,9 @@ export default function GenerateRecipePage() {
         throw new Error(result.error || "Failed to generate recipe")
       }
 
-      // Create nutrition data from the generated recipe
+      // Create initial nutrition data from the generated recipe
       const generatedRecipe = result.recipe
-      const nutritionData: NutritionData = {
-        calories: generatedRecipe.calories || calories,
-        protein: Math.round(((generatedRecipe.calories || calories) * 0.2) / 4), // 20% of calories from protein
-        carbs: Math.round(((generatedRecipe.calories || calories) * 0.5) / 4), // 50% of calories from carbs
-        fat: Math.round(((generatedRecipe.calories || calories) * 0.3) / 9), // 30% of calories from fat
-        fiber: Math.round(((generatedRecipe.calories || calories) * 0.05) / 2), // Estimated fiber
-        sugar: Math.round(((generatedRecipe.calories || calories) * 0.1) / 4), // Estimated sugar
-        vitamins: {
-          "Vitamin A": 15,
-          "Vitamin C": 25,
-          "Vitamin D": 10,
-          "Vitamin E": 8,
-        },
-        minerals: {
-          Calcium: 12,
-          Iron: 18,
-          Potassium: 10,
-          Magnesium: 15,
-        },
-      }
+      const initialNutritionData = createDefaultNutrition(generatedRecipe.calories || calories)
 
       // Set the recipe with the generated data
       setRecipe({
@@ -156,7 +135,7 @@ export default function GenerateRecipePage() {
         cooking_time: generatedRecipe.cooking_time || `${Math.floor(Math.random() * 30 + 15)} minutes`,
         ingredients: generatedRecipe.ingredients,
         instructions: generatedRecipe.instructions,
-        nutritionData,
+        nutritionData: initialNutritionData,
         markdown: generatedRecipe.markdown,
       })
 
@@ -212,13 +191,18 @@ export default function GenerateRecipePage() {
         throw new Error(result.error || "Failed to get nutritional information")
       }
 
-      setEnhancedNutrition(result.nutritionData)
+      const enhancedData = result.nutritionData
+      setEnhancedNutrition(enhancedData)
 
-      // Update the recipe with enhanced nutrition data if it exists
+      // Convert enhanced nutrition data to basic format for the recipe card
+      const basicNutritionData = enhancedToBasicNutrition(enhancedData)
+
+      // Update the recipe with the new nutrition data
       if (recipe) {
         setRecipe({
           ...recipe,
-          enhancedNutritionData: result.nutritionData,
+          nutritionData: basicNutritionData,
+          enhancedNutritionData: enhancedData,
         })
       }
     } catch (err: any) {
@@ -262,7 +246,10 @@ export default function GenerateRecipePage() {
         return
       }
 
-      // Now we can include the markdown field since it exists in the database
+      // Prioritize enhanced nutrition data from the component over Anthropic data
+      const nutritionDataToSave = enhancedNutrition || recipe.enhancedNutritionData || recipe.nutritionData
+
+      // Include nutritional data in the saved recipe
       const recipeData = {
         user_id: session.user.id,
         title: recipe.title,
@@ -270,8 +257,12 @@ export default function GenerateRecipePage() {
         cooking_time: recipe.cooking_time,
         ingredients: recipe.ingredients,
         instructions: recipe.instructions,
-        markdown: recipe.markdown, // Include markdown now that the column exists
+        markdown: recipe.markdown,
+        // Save the enhanced nutrition data
+        nutrition_data: nutritionDataToSave,
       }
+
+      console.log("Saving recipe with nutrition data:", nutritionDataToSave)
 
       const { error } = await supabase.from("favorite_recipes").insert(recipeData)
 
@@ -405,65 +396,24 @@ export default function GenerateRecipePage() {
             <>
               <div className="flex justify-between items-center">
                 <h2 className="text-xl font-semibold">Generated Recipe</h2>
-                <Tabs
-                  value={viewMode}
-                  onValueChange={(value) => setViewMode(value as "card" | "markdown")}
-                  className="w-auto"
-                >
-                  <TabsList>
-                    <TabsTrigger value="card">Card View</TabsTrigger>
-                    <TabsTrigger value="markdown">
-                      <FileText className="h-4 w-4 mr-1" />
-                      Markdown
-                    </TabsTrigger>
-                  </TabsList>
-                </Tabs>
               </div>
 
-              {viewMode === "card" ? (
-                <>
-                  <RecipeCard
-                    title={recipe.title}
-                    calories={recipe.calories}
-                    cooking_time={recipe.cooking_time}
-                    ingredients={recipe.ingredients}
-                    instructions={recipe.instructions}
-                    onSave={saveRecipe}
-                    isSaving={saving}
-                    nutritionData={recipe.nutritionData}
-                    isAuthenticated={!!user}
-                    currentPath={pathname}
-                    markdown={recipe.markdown}
-                  />
-
-                  {/* Enhanced Nutritional Information */}
-                  {(enhancedNutrition || recipe.enhancedNutritionData) && (
-                    <div className="mt-4">
-                      <EnhancedNutritionalInfo
-                        data={enhancedNutrition || recipe.enhancedNutritionData!}
-                        isLoading={nutritionLoading}
-                        error={nutritionError}
-                      />
-                    </div>
-                  )}
-                </>
-              ) : (
-                <div className="relative">
-                  <MarkdownRenderer markdown={recipe.markdown || ""} />
-                  <div className="absolute top-4 right-4">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={saveRecipe}
-                      disabled={saving || !user}
-                      className="flex items-center gap-1"
-                    >
-                      {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
-                      {user ? "Save Recipe" : "Sign in to Save"}
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <RecipeCard
+                title={recipe.title}
+                calories={recipe.calories}
+                cooking_time={recipe.cooking_time}
+                ingredients={recipe.ingredients}
+                instructions={recipe.instructions}
+                onSave={saveRecipe}
+                isSaving={saving}
+                nutritionData={recipe.nutritionData}
+                enhancedNutritionData={enhancedNutrition || recipe.enhancedNutritionData}
+                isAuthenticated={!!user}
+                currentPath={pathname}
+                markdown={recipe.markdown}
+                isNutritionLoading={nutritionLoading}
+                nutritionError={nutritionError}
+              />
             </>
           ) : (
             <div className="h-full flex items-center justify-center border-2 border-dashed rounded-lg p-12 text-center">

@@ -10,6 +10,8 @@ import Link from "next/link"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import RecipeCard from "@/components/recipe-card"
 import SignInPrompt from "@/components/sign-in-prompt"
+import { convertToNutritionData } from "@/utils/nutrition-helpers"
+import type { EnhancedNutritionData } from "@/components/enhanced-nutritional-info"
 
 type Recipe = {
   id: string
@@ -19,7 +21,8 @@ type Recipe = {
   ingredients: string[]
   instructions: string[]
   created_at: string
-  markdown?: string // Make markdown optional since it might not exist in the database
+  markdown?: string
+  nutrition_data?: any
 }
 
 export default function MyRecipesPage() {
@@ -69,10 +72,15 @@ export default function MyRecipesPage() {
           ingredients: recipe.ingredients || [],
           instructions: recipe.instructions || [],
           created_at: recipe.created_at,
-          // Only include markdown if it exists in the database
+          // Include markdown and nutrition_data if they exist
           ...(recipe.markdown && { markdown: recipe.markdown }),
+          ...(recipe.nutrition_data && { nutrition_data: recipe.nutrition_data }),
         }))
 
+        console.log(
+          "Fetched recipes with nutrition data:",
+          processedData.map((r) => r.nutrition_data),
+        )
         setRecipes(processedData)
       } catch (err: any) {
         console.error("Error fetching recipes:", err)
@@ -101,6 +109,44 @@ export default function MyRecipesPage() {
       setError(err.message || "Failed to delete recipe")
     } finally {
       setDeleting(null)
+    }
+  }
+
+  // Ensure nutrition data has the correct structure
+  const normalizeNutritionData = (data: any): EnhancedNutritionData => {
+    if (!data) {
+      return { calories: 0 }
+    }
+
+    // If data already has the correct structure with macronutrients
+    if (data.macronutrients) {
+      return data as EnhancedNutritionData
+    }
+
+    // If data has direct properties (old format)
+    if (data.protein !== undefined || data.carbs !== undefined || data.fat !== undefined) {
+      return {
+        calories: data.calories || 0,
+        protein: data.protein || 0,
+        carbs: data.carbs || 0,
+        fat: data.fat || 0,
+        fiber: data.fiber || 0,
+        sugar: data.sugar || 0,
+        vitamins: data.vitamins || {},
+        minerals: data.minerals || {},
+      } as EnhancedNutritionData
+    }
+
+    // Default fallback
+    return {
+      calories: data.calories || 0,
+      macronutrients: {
+        protein: 0,
+        carbs: 0,
+        fat: 0,
+        fiber: 0,
+        sugar: 0,
+      },
     }
   }
 
@@ -171,28 +217,36 @@ export default function MyRecipesPage() {
 
       <div className="grid gap-6">
         <AnimatePresence>
-          {recipes.map((recipe, index) => (
-            <motion.div
-              key={recipe.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, x: -100 }}
-              transition={{ duration: 0.4, delay: index * 0.1 }}
-            >
-              <RecipeCard
-                id={recipe.id}
-                title={recipe.title}
-                calories={recipe.calories}
-                cooking_time={recipe.cooking_time}
-                ingredients={recipe.ingredients}
-                instructions={recipe.instructions}
-                created_at={recipe.created_at}
-                onDelete={() => deleteRecipe(recipe.id)}
-                isDeleting={deleting === recipe.id}
-                markdown={recipe.markdown}
-              />
-            </motion.div>
-          ))}
+          {recipes.map((recipe, index) => {
+            // Normalize the nutrition data for display
+            const normalizedNutritionData = normalizeNutritionData(recipe.nutrition_data)
+            console.log(`Recipe ${recipe.id} normalized nutrition data:`, normalizedNutritionData)
+
+            return (
+              <motion.div
+                key={recipe.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, x: -100 }}
+                transition={{ duration: 0.4, delay: index * 0.1 }}
+              >
+                <RecipeCard
+                  id={recipe.id}
+                  title={recipe.title}
+                  calories={recipe.calories}
+                  cooking_time={recipe.cooking_time}
+                  ingredients={recipe.ingredients}
+                  instructions={recipe.instructions}
+                  created_at={recipe.created_at}
+                  onDelete={() => deleteRecipe(recipe.id)}
+                  isDeleting={deleting === recipe.id}
+                  markdown={recipe.markdown}
+                  nutritionData={convertToNutritionData(recipe.nutrition_data)}
+                  enhancedNutritionData={normalizedNutritionData}
+                />
+              </motion.div>
+            )
+          })}
         </AnimatePresence>
       </div>
     </div>
