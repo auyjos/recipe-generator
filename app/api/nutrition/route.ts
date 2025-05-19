@@ -4,6 +4,8 @@ import { NextResponse } from "next/server"
 const SYSTEM_PROMPT = `
 You are a nutrition expert assistant. Your task is to provide detailed nutritional information for recipes based on their ingredients, preferences, and calorie target.
 
+IMPORTANT: Carefully analyze the ingredient quantities provided in grams or other units. Base your nutritional analysis on these exact measurements for accuracy. The macronutrient values must be mathematically consistent with the ingredient quantities.
+
 Always respond with a JSON object containing the following structure:
 {
   "calories": number,
@@ -48,6 +50,11 @@ Always respond with a JSON object containing the following structure:
 }
 
 All values should be realistic estimates based on the ingredients and calorie target. Vitamin and mineral values should be percentage of daily recommended values.
+
+VERIFICATION STEPS:
+1. Ensure protein + carbs + fat (in grams) * their respective calorie values (4, 4, 9) equals approximately the total calories
+2. Verify that the micronutrient percentages are proportional to the ingredient quantities
+3. Double-check that the macronutrient distribution is appropriate for the recipe type
 `
 
 export async function POST(request: Request) {
@@ -65,14 +72,17 @@ export async function POST(request: Request) {
 
     // Create a user message that includes all the relevant information
     const userMessage = `
-    Provide detailed nutritional information for a ${mealType} recipe with these ingredients: ${ingredientsString}.
-    
-    Additional preferences: ${preferences || "None"}
-    
-    Target calories: approximately ${calories} kcal per serving.
-    
-    Please provide a comprehensive nutritional breakdown including macronutrients, vitamins, and minerals.
-    `
+Provide detailed nutritional information for a ${mealType} recipe with these ingredients: ${ingredientsString}.
+
+Additional preferences: ${preferences || "None"}
+
+Target calories: approximately ${calories} kcal per serving.
+
+Please provide a comprehensive nutritional breakdown including macronutrients, vitamins, and minerals.
+IMPORTANT: Pay close attention to the ingredient quantities (especially those in grams) and ensure your nutritional calculations are mathematically consistent with these amounts.
+
+The total calories from macronutrients (protein × 4 + carbs × 4 + fat × 9) should approximately equal the total calories.
+`
 
     try {
       // Make a fetch request to Anthropic API

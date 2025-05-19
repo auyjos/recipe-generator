@@ -10,6 +10,7 @@ import type { User } from "@supabase/supabase-js"
 import { Loader2, Menu } from "lucide-react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { useTheme } from "next-themes"
 
 export default function Navbar() {
   const pathname = usePathname()
@@ -17,12 +18,16 @@ export default function Navbar() {
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
   const [signOutLoading, setSignOutLoading] = useState(false)
+  const [authError, setAuthError] = useState<string | null>(null)
   const supabase = createClient()
+  const { theme } = useTheme()
 
   useEffect(() => {
     async function getUser() {
       try {
         setLoading(true)
+        setAuthError(null)
+
         const {
           data: { session },
           error,
@@ -30,11 +35,21 @@ export default function Navbar() {
 
         if (error) {
           console.error("Error getting session:", error)
+
+          // Handle refresh token errors gracefully
+          if (error.name === "AuthApiError" && error.message.includes("refresh_token")) {
+            console.log("Refresh token error, clearing session")
+            await supabase.auth.signOut() // Clear the invalid session
+            setUser(null)
+          } else {
+            setAuthError(error.message)
+          }
           return
         }
 
         setUser(session?.user || null)
 
+        // Set up auth state change listener with error handling
         const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
           console.log("Auth state changed:", event)
           setUser(session?.user || null)
@@ -43,8 +58,9 @@ export default function Navbar() {
         return () => {
           authListener.subscription.unsubscribe()
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error in auth setup:", error)
+        setAuthError(error.message)
       } finally {
         setLoading(false)
       }
@@ -93,7 +109,7 @@ export default function Navbar() {
       <div className="container mx-auto px-4 py-3 flex items-center justify-between">
         <Link href="/" className="text-xl font-bold relative group">
           <span className="bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
-            Recipe Generator
+            RecipeCraft
           </span>
           <motion.span
             className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary"
@@ -210,6 +226,12 @@ export default function Navbar() {
           </Sheet>
         </div>
       </div>
+
+      {authError && (
+        <div className="bg-amber-50 dark:bg-amber-950 text-amber-800 dark:text-amber-200 text-xs p-1 text-center">
+          Authentication issue detected. Please try signing in again if you experience problems.
+        </div>
+      )}
     </motion.header>
   )
 }

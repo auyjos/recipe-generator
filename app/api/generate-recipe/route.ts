@@ -5,13 +5,14 @@ import type { MealType } from "@/components/meal-type-selector"
 // Create a system prompt that guides Claude to generate recipes in a structured format
 const SYSTEM_PROMPT = `
 You are a professional chef assistant that creates recipes based on user ingredients, preferences, and meal type.
+Please generate a **single-serving** recipe with precise measurements.
 
 Always format your response in markdown with the following structure:
 # [Recipe Title]
 
 ## Ingredients
-- [Ingredient 1]
-- [Ingredient 2]
+- [Ingredient 1 with EXACT quantity in grams] (e.g., 100g chicken breast)
+- [Ingredient 2 with EXACT quantity in grams]
 ...
 
 ## Instructions
@@ -28,9 +29,13 @@ Always format your response in markdown with the following structure:
 ## Cooking Time
 [cooking time] minutes
 
-Be creative but practical. Focus on recipes that are delicious and achievable with the provided ingredients.
-Suggest a cooking time that is realistic for the recipe.
-Provide estimated nutritional information.
+IMPORTANT GUIDELINES:
+1. ALWAYS specify ingredient quantities in grams for ALL ingredients when possible
+2. Ensure the nutritional information is mathematically consistent with the ingredient quantities
+3. The total calories should approximately equal: (protein × 4) + (carbs × 4) + (fat × 9)
+4. Be creative but practical, focusing on recipes that are delicious and achievable
+5. Suggest a cooking time that is realistic for the recipe
+6. For liquids, use milliliters (ml) instead of grams when appropriate
 `
 
 export async function POST(request: Request) {

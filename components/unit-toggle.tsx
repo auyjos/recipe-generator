@@ -1,9 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { motion } from "framer-motion"
 import { Button } from "@/components/ui/button"
-import { Scale } from "lucide-react"
 
 interface UnitToggleProps {
   onToggle: (system: "metric" | "imperial") => void
@@ -20,24 +18,40 @@ export default function UnitToggle({ onToggle, defaultSystem = "metric" }: UnitT
   }
 
   return (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={handleToggle}
-      className="relative px-8 h-9"
-      aria-label={`Switch to ${system === "metric" ? "imperial" : "metric"} units`}
-    >
-      <Scale size={14} className="mr-2" />
-      <span className="relative z-10">{system === "metric" ? "Metric" : "Imperial"}</span>
-      <motion.div
-        className="absolute inset-0 bg-primary/10 rounded-md"
-        initial={false}
-        animate={{
-          x: system === "metric" ? 0 : "100%",
-          width: "50%",
+    <div className="flex items-center bg-muted rounded-md p-1">
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          if (system !== "metric") {
+            setSystem("metric")
+            onToggle("metric")
+          }
         }}
-        transition={{ type: "spring", stiffness: 300, damping: 30 }}
-      />
-    </Button>
+        className={`relative px-3 py-1 h-7 rounded-sm ${
+          system === "metric" ? "text-primary bg-background" : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        Metric
+      </Button>
+
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          if (system !== "imperial") {
+            setSystem("imperial")
+            onToggle("imperial")
+          }
+        }}
+        className={`relative px-3 py-1 h-7 rounded-sm ${
+          system === "imperial" ? "text-primary bg-background" : "text-muted-foreground hover:text-foreground"
+        }`}
+      >
+        Imperial
+      </Button>
+    </div>
   )
 }

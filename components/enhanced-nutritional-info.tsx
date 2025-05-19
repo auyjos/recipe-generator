@@ -1,13 +1,15 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { motion, AnimatePresence } from "framer-motion"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Info, ChevronDown, ChevronUp, Loader2 } from "lucide-react"
+import { Info, ChevronDown, ChevronUp, Loader2, AlertTriangle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { extractIngredientsWithQuantities, validateNutritionalData } from "@/utils/ingredient-parser"
 
 export type EnhancedNutritionData = {
   calories: number
@@ -43,16 +45,19 @@ export type EnhancedNutritionData = {
 
 interface EnhancedNutritionalInfoProps {
   data: EnhancedNutritionData
+  ingredients?: string[]
   isLoading?: boolean
   error?: string | null
 }
 
 export default function EnhancedNutritionalInfo({
   data,
+  ingredients = [],
   isLoading = false,
   error = null,
 }: EnhancedNutritionalInfoProps) {
   const [expanded, setExpanded] = useState(false)
+  const [validationWarning, setValidationWarning] = useState<string | null>(null)
 
   // Handle both new format (with macronutrients object) and old format (with direct properties)
   const protein = data.macronutrients?.protein ?? data.protein ?? 0
@@ -67,30 +72,56 @@ export default function EnhancedNutritionalInfo({
   const carbsPercentage = totalMacros > 0 ? Math.round((carbs / totalMacros) * 100) : 34
   const fatPercentage = totalMacros > 0 ? Math.round((fat / totalMacros) * 100) : 33
 
-  // Group micronutrients for better display
-  const vitaminGroups = data.vitamins
-    ? Object.entries(data.vitamins).reduce(
-        (acc, [key, value], index) => {
-          const groupIndex = Math.floor(index / 3)
-          if (!acc[groupIndex]) acc[groupIndex] = []
-          acc[groupIndex].push({ name: key, value })
-          return acc
-        },
-        [] as Array<Array<{ name: string; value: number }>>,
-      )
+  // Sort vitamins and minerals by value (highest first)
+  const sortedVitamins = data.vitamins
+    ? Object.entries(data.vitamins)
+        .sort(([, valueA], [, valueB]) => valueB - valueA)
+        .map(([name, value]) => ({ name, value }))
     : []
 
-  const mineralGroups = data.minerals
-    ? Object.entries(data.minerals).reduce(
-        (acc, [key, value], index) => {
-          const groupIndex = Math.floor(index / 3)
-          if (!acc[groupIndex]) acc[groupIndex] = []
-          acc[groupIndex].push({ name: key, value })
-          return acc
-        },
-        [] as Array<Array<{ name: string; value: number }>>,
-      )
+  const sortedMinerals = data.minerals
+    ? Object.entries(data.minerals)
+        .sort(([, valueA], [, valueB]) => valueB - valueA)
+        .map(([name, value]) => ({ name, value }))
     : []
+
+  // Group micronutrients for better display (3 per row)
+  const vitaminGroups = sortedVitamins.reduce(
+    (acc, item, index) => {
+      const groupIndex = Math.floor(index / 3)
+      if (!acc[groupIndex]) acc[groupIndex] = []
+      acc[groupIndex].push(item)
+      return acc
+    },
+    [] as Array<Array<{ name: string; value: number }>>,
+  )
+
+  const mineralGroups = sortedMinerals.reduce(
+    (acc, item, index) => {
+      const groupIndex = Math.floor(index / 3)
+      if (!acc[groupIndex]) acc[groupIndex] = []
+      acc[groupIndex].push(item)
+      return acc
+    },
+    [] as Array<Array<{ name: string; value: number }>>,
+  )
+
+  // Validate nutritional data against ingredients
+  useEffect(() => {
+    if (ingredients.length > 0 && data.calories > 0) {
+      const ingredientsWithQuantities = extractIngredientsWithQuantities(ingredients)
+
+      if (ingredientsWithQuantities.length > 0) {
+        const isValid = validateNutritionalData(ingredientsWithQuantities, data.calories, protein, carbs, fat)
+
+        if (!isValid) {
+          setValidationWarning("The nutritional information may not accurately reflect the ingredient quantities.")
+        } else {
+          setValidationWarning(null)
+        }
+      }
+    }
+  }, [ingredients, data.calories, protein, carbs, fat])
 
   return (
     <Card className="w-full overflow-hidden">
@@ -121,6 +152,13 @@ export default function EnhancedNutritionalInfo({
               <span className="font-medium">Calories</span>
               <span className="text-lg font-bold">{data.calories} kcal</span>
             </div>
+
+            {validationWarning && (
+              <div className="flex items-center gap-2 text-amber-500 text-xs p-2 bg-amber-500/10 rounded-md">
+                <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+                <span>{validationWarning}</span>
+              </div>
+            )}
 
             {data.servingSize && (
               <div className="flex justify-between items-center text-sm text-muted-foreground">
@@ -209,20 +247,46 @@ export default function EnhancedNutritionalInfo({
                     </TabsContent>
 
                     <TabsContent value="vitamins" className="pt-4">
-                      {data.vitamins && Object.keys(data.vitamins).length > 0 ? (
+                      {sortedVitamins.length > 0 ? (
                         <div className="space-y-4">
                           {vitaminGroups.map((group, groupIndex) => (
                             <div key={groupIndex} className="grid grid-cols-3 gap-2">
                               {group.map(({ name, value }) => (
-                                <div key={name} className="flex flex-col items-center">
-                                  <Badge variant="outline" className="mb-1 px-2 py-1">
-                                    {value}%
-                                  </Badge>
-                                  <span className="text-xs text-center">{name}</span>
-                                </div>
+                                <TooltipProvider key={name}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div className="flex flex-col items-center">
+                                        <div className="relative w-full h-1 bg-muted mb-2 rounded-full overflow-hidden">
+                                          <div
+                                            className="absolute top-0 left-0 h-full bg-blue-500 rounded-full"
+                                            style={{ width: `${Math.min(100, value)}%` }}
+                                          />
+                                        </div>
+                                        <Badge
+                                          variant="outline"
+                                          className={`mb-1 px-2 py-1 ${value >= 25 ? "border-blue-500 bg-blue-500/10" : ""}`}
+                                        >
+                                          {value}%
+                                        </Badge>
+                                        <span className="text-xs text-center">
+                                          {name.length > 3 ? `Vit. ${name}` : `Vitamin ${name}`}
+                                        </span>
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p className="text-xs">
+                                        {value}% of daily recommended{" "}
+                                        {name.length > 3 ? `Vitamin ${name}` : `Vitamin ${name}`}
+                                      </p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
                               ))}
                             </div>
                           ))}
+                          <div className="text-xs text-muted-foreground text-center mt-2">
+                            Percentage of daily recommended intake
+                          </div>
                         </div>
                       ) : (
                         <div className="text-center text-muted-foreground py-4">
@@ -233,20 +297,43 @@ export default function EnhancedNutritionalInfo({
                     </TabsContent>
 
                     <TabsContent value="minerals" className="pt-4">
-                      {data.minerals && Object.keys(data.minerals).length > 0 ? (
+                      {sortedMinerals.length > 0 ? (
                         <div className="space-y-4">
                           {mineralGroups.map((group, groupIndex) => (
                             <div key={groupIndex} className="grid grid-cols-3 gap-2">
                               {group.map(({ name, value }) => (
-                                <div key={name} className="flex flex-col items-center">
-                                  <Badge variant="outline" className="mb-1 px-2 py-1">
-                                    {value}%
-                                  </Badge>
-                                  <span className="text-xs text-center">{name}</span>
-                                </div>
+                                <TooltipProvider key={name}>
+                                  <Tooltip>
+                                    <TooltipTrigger asChild>
+                                      <div className="flex flex-col items-center">
+                                        <div className="relative w-full h-1 bg-muted mb-2 rounded-full overflow-hidden">
+                                          <div
+                                            className="absolute top-0 left-0 h-full bg-green-500 rounded-full"
+                                            style={{ width: `${Math.min(100, value)}%` }}
+                                          />
+                                        </div>
+                                        <Badge
+                                          variant="outline"
+                                          className={`mb-1 px-2 py-1 ${value >= 25 ? "border-green-500 bg-green-500/10" : ""}`}
+                                        >
+                                          {value}%
+                                        </Badge>
+                                        <span className="text-xs text-center">{name}</span>
+                                      </div>
+                                    </TooltipTrigger>
+                                    <TooltipContent>
+                                      <p className="text-xs">
+                                        {value}% of daily recommended {name}
+                                      </p>
+                                    </TooltipContent>
+                                  </Tooltip>
+                                </TooltipProvider>
                               ))}
                             </div>
                           ))}
+                          <div className="text-xs text-muted-foreground text-center mt-2">
+                            Percentage of daily recommended intake
+                          </div>
                         </div>
                       ) : (
                         <div className="text-center text-muted-foreground py-4">
@@ -276,6 +363,30 @@ export default function EnhancedNutritionalInfo({
           </div>
         )}
       </CardContent>
+
+      {!expanded && (sortedVitamins.length > 0 || sortedMinerals.length > 0) && (
+        <div className="px-6 pb-4">
+          <h4 className="text-xs font-medium mb-2 text-muted-foreground">Micronutrient Highlights</h4>
+          <div className="flex flex-wrap gap-2">
+            {sortedVitamins
+              .filter((v) => v.value >= 25)
+              .slice(0, 3)
+              .map(({ name, value }) => (
+                <Badge key={`vit-${name}`} variant="outline" className="bg-blue-500/10 border-blue-500/30">
+                  Vit. {name} {value}%
+                </Badge>
+              ))}
+            {sortedMinerals
+              .filter((m) => m.value >= 20)
+              .slice(0, 3)
+              .map(({ name, value }) => (
+                <Badge key={`min-${name}`} variant="outline" className="bg-green-500/10 border-green-500/30">
+                  {name} {value}%
+                </Badge>
+              ))}
+          </div>
+        </div>
+      )}
     </Card>
   )
 }

@@ -9,9 +9,14 @@ export async function middleware(request: NextRequest) {
     // We're no longer redirecting users automatically
     // Instead, we'll just add the session to the request for pages to use
     const supabase = createClient()
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+
+    try {
+      // Wrap in try/catch to handle auth errors gracefully
+      await supabase.auth.getSession()
+    } catch (error) {
+      console.error("Auth error in middleware:", error)
+      // Continue anyway - we'll handle auth state in the components
+    }
 
     // Continue to the requested page
     return NextResponse.next()

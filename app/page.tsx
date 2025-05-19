@@ -5,8 +5,29 @@ import { Card, CardContent } from "@/components/ui/card"
 import Link from "next/link"
 import { motion } from "framer-motion"
 import { ChefHat, Utensils, BookMarked, UserCheck } from "lucide-react"
+import { useEffect, useState } from "react"
+import { createClient } from "@/utils/supabase/client"
 
 export default function Home() {
+  const [authInitialized, setAuthInitialized] = useState(false)
+
+  // Initialize auth silently to handle any token errors
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        const supabase = createClient()
+        await supabase.auth.getSession()
+      } catch (error) {
+        console.error("Auth initialization error:", error)
+        // Continue anyway - we'll handle auth state in the navbar
+      } finally {
+        setAuthInitialized(true)
+      }
+    }
+
+    initAuth()
+  }, [])
+
   const container = {
     hidden: { opacity: 0 },
     show: {
@@ -20,6 +41,11 @@ export default function Home() {
   const item = {
     hidden: { opacity: 0, y: 20 },
     show: { opacity: 1, y: 0 },
+  }
+
+  // Don't render until auth is initialized to prevent flashing
+  if (!authInitialized) {
+    return null
   }
 
   return (
@@ -55,7 +81,7 @@ export default function Home() {
                 <ChefHat className="h-6 w-6 text-primary" />
               </div>
               <h2 className="text-xl font-semibold mb-2">Generate Recipes</h2>
-              <p className="text-muted-foreground mb-4 text-center">
+              <p className="text-sm text-muted-foreground mb-4 text-center">
                 Create custom recipes tailored to your dietary preferences and available ingredients.
                 <span className="block mt-2 text-xs font-medium text-primary">No account required!</span>
               </p>
@@ -83,7 +109,7 @@ export default function Home() {
                 <BookMarked className="h-6 w-6 text-primary" />
               </div>
               <h2 className="text-xl font-semibold mb-2">Save Favorites</h2>
-              <p className="text-muted-foreground mb-4 text-center">
+              <p className="text-sm text-muted-foreground mb-4 text-center">
                 Build your personal cookbook by saving recipes you love for easy access later.
                 <span className="block mt-2 text-xs font-medium">
                   <UserCheck className="inline h-3 w-3 mr-1" />

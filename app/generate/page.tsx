@@ -6,19 +6,20 @@ import { motion } from "framer-motion"
 import { createClient } from "@/utils/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Loader2, Sparkles } from "lucide-react"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { AlertDescription, Alert } from "@/components/ui/alert"
 import RecipeCard from "@/components/recipe-card"
-import type { NutritionData } from "@/components/nutritional-info"
 import type { User } from "@supabase/supabase-js"
 import IngredientInput from "@/components/ingredient-input"
-import MealTypeSelector, { type MealType } from "@/components/meal-type-selector"
-import { Separator } from "@/components/ui/separator"
-import CalorieInput from "@/components/calorie-input"
-import type { EnhancedNutritionData } from "@/components/enhanced-nutritional-info"
+import type { MealType } from "@/components/meal-type-selector"
 import { enhancedToBasicNutrition, createDefaultNutrition } from "@/utils/nutrition-helpers"
+// Import icons individually to avoid potential loading issues
+import { Loader2 } from "lucide-react"
+import { Sparkles } from "lucide-react"
+
+// Update the imports to include the enhanced MealTypeSelector component
+import MealTypeSelector from "@/components/meal-type-selector-enhanced"
 
 type Recipe = {
   title: string
@@ -26,16 +27,17 @@ type Recipe = {
   cooking_time: string
   ingredients: string[]
   instructions: string[]
-  nutritionData: NutritionData
-  enhancedNutritionData?: EnhancedNutritionData
+  nutritionData: any
+  enhancedNutritionData?: any
   markdown?: string
+  mealType?: string
 }
 
 export default function GenerateRecipePage() {
   const [preferences, setPreferences] = useState("")
   const [ingredients, setIngredients] = useState<string[]>([])
-  const [mealType, setMealType] = useState<MealType>("dinner")
-  const [calories, setCalories] = useState(500)
+  const [mealType, setMealType] = useState<MealType>("snack")
+  const [calories, setCalories] = useState(200)
   const [loading, setLoading] = useState(false)
   const [nutritionLoading, setNutritionLoading] = useState(false)
   const [recipe, setRecipe] = useState<Recipe | null>(null)
@@ -47,7 +49,9 @@ export default function GenerateRecipePage() {
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
-  const [enhancedNutrition, setEnhancedNutrition] = useState<EnhancedNutritionData | null>(null)
+  const [enhancedNutrition, setEnhancedNutrition] = useState<any | null>(null)
+  const [dietaryExclusions, setDietaryExclusions] = useState<string[]>([])
+  const [exclusionInput, setExclusionInput] = useState("")
 
   // Check authentication status
   useEffect(() => {
@@ -56,17 +60,6 @@ export default function GenerateRecipePage() {
         data: { session },
       } = await supabase.auth.getSession()
       setUser(session?.user || null)
-
-      // Set up auth state change listener
-      const {
-        data: { subscription },
-      } = supabase.auth.onAuthStateChange((_event, session) => {
-        setUser(session?.user || null)
-      })
-
-      return () => {
-        subscription.unsubscribe()
-      }
     }
 
     checkAuth()
@@ -74,17 +67,6 @@ export default function GenerateRecipePage() {
 
   // Generate recipe using AI
   const generateRecipe = async () => {
-    // Validate inputs
-    if (ingredients.length < 3) {
-      setError("Please add at least 3 ingredients")
-      return
-    }
-
-    if (!preferences.trim()) {
-      setError("Please enter your preferences")
-      return
-    }
-
     setLoading(true)
     setError(null)
     setSaveSuccess(false)
@@ -98,26 +80,25 @@ export default function GenerateRecipePage() {
         },
         body: JSON.stringify({
           ingredients,
-          preferences,
+          preferences:
+            preferences +
+            (dietaryExclusions.length > 0 ? `. Exclude: ${dietaryExclusions.join(", ")}` : "") +
+            ". Please provide ingredient quantities in grams where possible for accuracy.",
           mealType,
           calories,
         }),
       })
 
-      // Check if the response is ok before trying to parse JSON
       if (!response.ok) {
         const errorText = await response.text()
         try {
-          // Try to parse as JSON first
           const errorJson = JSON.parse(errorText)
           throw new Error(errorJson.error || `Server error: ${response.status}`)
         } catch (jsonError) {
-          // If it's not valid JSON, use the text
           throw new Error(`Server error: ${errorText || response.statusText || response.status}`)
         }
       }
 
-      // Parse the JSON response
       const result = await response.json()
 
       if (!result.success || !result.recipe) {
@@ -137,6 +118,7 @@ export default function GenerateRecipePage() {
         instructions: generatedRecipe.instructions,
         nutritionData: initialNutritionData,
         markdown: generatedRecipe.markdown,
+        mealType: getMealTypeLabel(mealType),
       })
 
       // Get enhanced nutritional information
@@ -192,6 +174,22 @@ export default function GenerateRecipePage() {
       }
 
       const enhancedData = result.nutritionData
+
+      // Ensure vitamins and minerals are properly structured
+      if (enhancedData.vitamins) {
+        // Make sure vitamin values are numbers
+        Object.entries(enhancedData.vitamins).forEach(([key, value]) => {
+          enhancedData.vitamins[key] = typeof value === "number" ? value : Number.parseInt(value as string) || 0
+        })
+      }
+
+      if (enhancedData.minerals) {
+        // Make sure mineral values are numbers
+        Object.entries(enhancedData.minerals).forEach(([key, value]) => {
+          enhancedData.minerals[key] = typeof value === "number" ? value : Number.parseInt(value as string) || 0
+        })
+      }
+
       setEnhancedNutrition(enhancedData)
 
       // Convert enhanced nutrition data to basic format for the recipe card
@@ -210,20 +208,6 @@ export default function GenerateRecipePage() {
       setNutritionError(err.message || "Failed to get nutritional information")
     } finally {
       setNutritionLoading(false)
-    }
-  }
-
-  // Handle calorie change
-  const handleCalorieChange = (newCalories: number) => {
-    setCalories(newCalories)
-  }
-
-  // Request nutrition data when calories change
-  const handleNutritionRequest = (newCalories: number) => {
-    if (recipe) {
-      fetchNutritionData(recipe.ingredients, preferences, mealType, newCalories)
-    } else if (ingredients.length >= 3) {
-      fetchNutritionData(ingredients, preferences, mealType, newCalories)
     }
   }
 
@@ -260,9 +244,9 @@ export default function GenerateRecipePage() {
         markdown: recipe.markdown,
         // Save the enhanced nutrition data
         nutrition_data: nutritionDataToSave,
+        // Now we can include the meal_type since the column has been added
+        meal_type: recipe.mealType || getMealTypeLabel(mealType),
       }
-
-      console.log("Saving recipe with nutrition data:", nutritionDataToSave)
 
       const { error } = await supabase.from("favorite_recipes").insert(recipeData)
 
@@ -284,19 +268,40 @@ export default function GenerateRecipePage() {
     }
   }
 
-  const isFormValid = ingredients.length >= 3 && preferences.trim() !== ""
+  const getMealTypeLabel = (type: MealType): string => {
+    switch (type) {
+      case "breakfast":
+        return "Breakfast"
+      case "lunch":
+        return "Lunch"
+      case "dinner":
+        return "Dinner"
+      case "snack":
+        return "Snack"
+      default:
+        return "Snack"
+    }
+  }
+
+  const addDietaryExclusion = () => {
+    if (exclusionInput.trim() && !dietaryExclusions.includes(exclusionInput.trim())) {
+      setDietaryExclusions([...dietaryExclusions, exclusionInput.trim()])
+      setExclusionInput("")
+    }
+  }
+
+  const removeDietaryExclusion = (exclusion: string) => {
+    setDietaryExclusions(dietaryExclusions.filter((item) => item !== exclusion))
+  }
+
+  const addQuickExclusion = (exclusion: string) => {
+    if (!dietaryExclusions.includes(exclusion)) {
+      setDietaryExclusions([...dietaryExclusions, exclusion])
+    }
+  }
 
   return (
-    <div className="max-w-6xl mx-auto">
-      <motion.h1
-        className="text-3xl font-bold mb-6"
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5 }}
-      >
-        Generate Recipe
-      </motion.h1>
-
+    <div className="container mx-auto px-4 py-8">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Recipe Preferences Form */}
         <motion.div
@@ -304,69 +309,178 @@ export default function GenerateRecipePage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.1 }}
         >
-          <Card className="overflow-hidden border-2 hover:border-primary/20 transition-all duration-300 h-full">
-            <CardHeader>
-              <CardTitle>Recipe Preferences</CardTitle>
-              <CardDescription>Tell us what kind of recipe you'd like to generate</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <Label htmlFor="preferences">Description</Label>
-                <Textarea
-                  id="preferences"
-                  placeholder="Describe what you're looking for (e.g., quick and easy, vegetarian, spicy, etc.)"
-                  value={preferences}
-                  onChange={(e) => setPreferences(e.target.value)}
-                  className="min-h-[80px] resize-none transition-all duration-200 focus:border-primary"
-                />
+          <div className="recipe-form p-6">
+            <h2 className="text-2xl font-bold mb-2">Create Your Recipe</h2>
+            <p className="text-muted-foreground mb-6">
+              Choose how you want to generate your recipe and enter your preferences.
+            </p>
+
+            {/* API Info */}
+            <div className="bg-muted border border-primary/30 rounded-lg p-4 mb-6">
+              <div className="flex items-start">
+                <div>
+                  <p className="text-primary font-medium">API Status</p>
+                  <p className="text-sm text-muted-foreground">
+                    Using Anthropic API to generate recipes with AI assistance.
+                  </p>
+                </div>
               </div>
+            </div>
 
-              <Separator />
-
-              <MealTypeSelector selectedMealType={mealType} onSelect={setMealType} />
-
-              <Separator />
-
-              <div className="space-y-2">
-                <Label>Ingredients (minimum 3)</Label>
-                <IngredientInput ingredients={ingredients} setIngredients={setIngredients} minIngredients={3} />
-              </div>
-
-              <Separator />
-
-              <CalorieInput
+            {/* Target Calories */}
+            <div className="mb-6">
+              <Label htmlFor="calories" className="block mb-2">
+                Target Calories
+              </Label>
+              <Input
+                id="calories"
+                type="number"
                 value={calories}
-                onChange={handleCalorieChange}
-                onNutritionRequest={handleNutritionRequest}
-                isLoading={nutritionLoading}
+                onChange={(e) => setCalories(Number(e.target.value))}
+                min={100}
+                max={1000}
+                step={50}
+                className="bg-background border-input focus:border-primary"
               />
-            </CardContent>
-            <CardFooter>
-              <Button
-                onClick={generateRecipe}
-                disabled={loading || !isFormValid}
-                className="w-full transition-all duration-300 relative overflow-hidden group"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="mr-2 h-4 w-4 group-hover:animate-pulse" />
-                    Generate Recipe
-                  </>
-                )}
-                <motion.span
-                  className="absolute inset-0 bg-white/20 rounded-md"
-                  initial={{ x: "-100%" }}
-                  animate={loading ? { x: "0%" } : { x: "-100%" }}
-                  transition={{ repeat: Number.POSITIVE_INFINITY, duration: 1, ease: "linear" }}
+            </div>
+
+            {/* Meal Type */}
+            <div className="mb-6">
+              <MealTypeSelector selectedMealType={mealType} onSelect={setMealType} />
+            </div>
+
+            {/* Ingredients */}
+            <div className="mb-6">
+              <div className="flex justify-between items-center mb-2">
+                <Label>Ingredients</Label>
+                <Button variant="outline" size="sm" className="text-xs">
+                  Use My Ingredients
+                </Button>
+              </div>
+              <IngredientInput ingredients={ingredients} setIngredients={setIngredients} minIngredients={3} />
+            </div>
+
+            {/* Dietary Exclusions */}
+            <div className="mb-6">
+              <Label className="block mb-2">Dietary Exclusions (optional)</Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Add ingredients or dietary restrictions you want to exclude from your recipe.
+              </p>
+
+              <div className="flex gap-2 mb-2">
+                <Input
+                  placeholder="Add dietary exclusion (e.g., nuts, dairy)"
+                  value={exclusionInput}
+                  onChange={(e) => setExclusionInput(e.target.value)}
+                  className="bg-background border-input focus:border-primary"
+                  onKeyDown={(e) => e.key === "Enter" && addDietaryExclusion()}
                 />
-              </Button>
-            </CardFooter>
-          </Card>
+                <Button type="button" onClick={addDietaryExclusion} variant="outline">
+                  Add
+                </Button>
+              </div>
+
+              <div className="flex flex-wrap gap-2 mb-3">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() => addQuickExclusion("Gluten")}
+                >
+                  + Gluten
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() => addQuickExclusion("Dairy")}
+                >
+                  + Dairy
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() => addQuickExclusion("Eggs")}
+                >
+                  + Eggs
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() => addQuickExclusion("Soy")}
+                >
+                  + Soy
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() => addQuickExclusion("Shellfish")}
+                >
+                  + Shellfish
+                </Button>
+              </div>
+
+              {dietaryExclusions.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {dietaryExclusions.map((exclusion) => (
+                    <div
+                      key={exclusion}
+                      className="bg-destructive/20 text-destructive px-2 py-1 rounded-md text-xs flex items-center"
+                    >
+                      {exclusion}
+                      <button
+                        type="button"
+                        className="ml-2 text-destructive hover:text-destructive/80"
+                        onClick={() => removeDietaryExclusion(exclusion)}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Preferences */}
+            <div className="mb-6">
+              <Label htmlFor="preferences" className="block mb-2">
+                Additional Preferences
+              </Label>
+              <Textarea
+                id="preferences"
+                placeholder="Describe what you're looking for (e.g., quick and easy, vegetarian, spicy, etc.)"
+                value={preferences}
+                onChange={(e) => setPreferences(e.target.value)}
+                className="min-h-[80px] resize-none bg-background border-input focus:border-primary"
+              />
+            </div>
+
+            <Button
+              onClick={generateRecipe}
+              disabled={loading || ingredients.length < 3}
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              {loading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="mr-2 h-4 w-4" />
+                  Generate Recipe
+                </>
+              )}
+            </Button>
+          </div>
         </motion.div>
 
         {/* Recipe Result */}
@@ -374,56 +488,47 @@ export default function GenerateRecipePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
-          className="flex flex-col gap-4"
         >
           {error && (
-            <Alert variant="destructive">
-              <AlertTitle>Error</AlertTitle>
+            <Alert variant="destructive" className="mb-4">
               <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
 
           {saveSuccess && (
-            <Alert className="bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800">
-              <AlertTitle className="text-green-800 dark:text-green-300">Success</AlertTitle>
-              <AlertDescription className="text-green-700 dark:text-green-400">
-                Recipe saved to your favorites!
-              </AlertDescription>
+            <Alert className="mb-4 bg-green-900/30 border-green-600/30">
+              <AlertDescription className="text-green-400">Recipe saved to your favorites!</AlertDescription>
             </Alert>
           )}
 
           {recipe ? (
-            <>
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-semibold">Generated Recipe</h2>
-              </div>
-
-              <RecipeCard
-                title={recipe.title}
-                calories={recipe.calories}
-                cooking_time={recipe.cooking_time}
-                ingredients={recipe.ingredients}
-                instructions={recipe.instructions}
-                onSave={saveRecipe}
-                isSaving={saving}
-                nutritionData={recipe.nutritionData}
-                enhancedNutritionData={enhancedNutrition || recipe.enhancedNutritionData}
-                isAuthenticated={!!user}
-                currentPath={pathname}
-                markdown={recipe.markdown}
-                isNutritionLoading={nutritionLoading}
-                nutritionError={nutritionError}
-              />
-            </>
+            <RecipeCard
+              title={recipe.title}
+              calories={recipe.calories}
+              cooking_time={recipe.cooking_time}
+              ingredients={recipe.ingredients}
+              instructions={recipe.instructions}
+              onSave={saveRecipe}
+              isSaving={saving}
+              nutritionData={recipe.nutritionData}
+              enhancedNutritionData={enhancedNutrition || recipe.enhancedNutritionData}
+              isAuthenticated={!!user}
+              currentPath={pathname}
+              markdown={recipe.markdown}
+              isNutritionLoading={nutritionLoading}
+              nutritionError={nutritionError}
+              mealType={recipe.mealType}
+              passIngredientsToNutrition={true}
+            />
           ) : (
-            <div className="h-full flex items-center justify-center border-2 border-dashed rounded-lg p-12 text-center">
-              <div className="space-y-3">
+            <div className="recipe-card flex items-center justify-center p-12 text-center h-full">
+              <div className="space-y-4">
                 <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Sparkles className="h-8 w-8 text-primary/70" />
+                  <Sparkles className="h-8 w-8 text-primary" />
                 </div>
                 <h3 className="text-lg font-medium">Your recipe will appear here</h3>
                 <p className="text-muted-foreground max-w-xs mx-auto">
-                  Fill out your preferences, add at least 3 ingredients, and click "Generate Recipe" to see the result.
+                  Fill out your preferences, add ingredients, and click "Generate Recipe" to see the result.
                 </p>
               </div>
             </div>

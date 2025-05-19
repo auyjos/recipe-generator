@@ -10,10 +10,10 @@
     --card-foreground: 222.2 84% 4.9%;
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
+    --primary: 142.1 76.2% 36.3%;
+    --primary-foreground: 355.7 100% 97.3%;
+    --secondary: 217.2 32.6% 17.5%;
+    --secondary-foreground: 210 40% 98%;
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
     --accent: 210 40% 96.1%;
@@ -22,7 +22,7 @@
     --destructive-foreground: 210 40% 98%;
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --ring: 142.1 76.2% 36.3%;
     --radius: 0.5rem;
   }
 
@@ -33,8 +33,8 @@
     --card-foreground: 210 40% 98%;
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
+    --primary: 142.1 70.6% 45.3%;
+    --primary-foreground: 144.9 80.4% 10%;
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
     --muted: 217.2 32.6% 17.5%;
@@ -45,7 +45,7 @@
     --destructive-foreground: 210 40% 98%;
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --ring: 142.4 71.8% 29.2%;
   }
 }
 
@@ -98,4 +98,91 @@
 
 ::-webkit-scrollbar-thumb:hover {
   background: hsl(var(--muted-foreground) / 0.5);
+}
+
+/* Custom styles for recipe app */
+.recipe-card {
+  @apply bg-card border rounded-xl overflow-hidden;
+}
+
+.recipe-form {
+  @apply bg-background border rounded-xl overflow-hidden;
+}
+
+.nutrition-bar {
+  @apply h-2 rounded-full bg-secondary/30 overflow-hidden;
+}
+
+.nutrition-bar-protein {
+  @apply bg-blue-500;
+}
+
+.nutrition-bar-carbs {
+  @apply bg-green-500;
+}
+
+.nutrition-bar-fat {
+  @apply bg-red-500;
+}
+
+.meal-type-button {
+  @apply flex flex-col items-center justify-center p-4 rounded-lg border-2 border-border bg-card hover:border-primary/50 transition-all;
+}
+
+.meal-type-button.active {
+  @apply border-primary bg-primary/10;
+}
+
+.ingredient-dot {
+  @apply w-2 h-2 rounded-full bg-primary mt-2 mr-2 flex-shrink-0;
+}
+
+.instruction-number {
+  @apply flex items-center justify-center w-6 h-6 rounded-full bg-muted text-sm font-medium mr-3 flex-shrink-0;
+}
+
+/* Add these to the end of the file */
+.micronutrient-bar {
+  @apply h-1 rounded-full bg-muted overflow-hidden;
+}
+
+.micronutrient-bar-vitamin {
+  @apply bg-blue-500;
+}
+
+.micronutrient-bar-mineral {
+  @apply bg-green-500;
+}
+
+.nutrition-highlight {
+  @apply bg-primary/10 rounded-md p-1 text-xs inline-flex items-center;
+}
+
+/* Micronutrient visualization styles */
+.micronutrient-badge {
+  @apply text-xs px-2 py-0.5 rounded-full;
+}
+
+.micronutrient-badge-vitamin {
+  @apply bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30;
+}
+
+.micronutrient-badge-mineral {
+  @apply bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/30;
+}
+
+.micronutrient-progress {
+  @apply h-1 w-full bg-muted rounded-full overflow-hidden relative;
+}
+
+.micronutrient-progress-bar-vitamin {
+  @apply absolute top-0 left-0 h-full bg-blue-500 rounded-full;
+}
+
+.micronutrient-progress-bar-mineral {
+  @apply absolute top-0 left-0 h-full bg-green-500 rounded-full;
+}
+
+.validation-warning {
+  @apply flex items-center gap-2 text-amber-500 text-xs p-2 bg-amber-500/10 rounded-md;
 }

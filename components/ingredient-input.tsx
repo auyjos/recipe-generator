@@ -6,7 +6,6 @@ import { useState, useRef, useEffect } from "react"
 import { X, Plus } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
 import { motion, AnimatePresence } from "framer-motion"
 
 interface IngredientInputProps {
@@ -103,19 +102,19 @@ export default function IngredientInput({ ingredients, setIngredients, minIngred
               exit={{ opacity: 0, scale: 0.8 }}
               transition={{ duration: 0.2 }}
             >
-              <Badge variant="secondary" className="pl-3 pr-2 py-1.5 flex items-center gap-1">
+              <div className="bg-muted text-foreground px-3 py-1.5 rounded-md flex items-center gap-1">
                 {ingredient}
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-4 w-4 rounded-full"
+                  className="h-4 w-4 rounded-full hover:bg-muted ml-1"
                   onClick={() => removeIngredient(index)}
                 >
                   <X className="h-3 w-3" />
                   <span className="sr-only">Remove {ingredient}</span>
                 </Button>
-              </Badge>
+              </div>
             </motion.div>
           ))}
         </AnimatePresence>

@@ -23,6 +23,7 @@ type Recipe = {
   created_at: string
   markdown?: string
   nutrition_data?: any
+  meal_type?: string // Added to match the new database column
 }
 
 export default function MyRecipesPage() {
@@ -75,6 +76,8 @@ export default function MyRecipesPage() {
           // Include markdown and nutrition_data if they exist
           ...(recipe.markdown && { markdown: recipe.markdown }),
           ...(recipe.nutrition_data && { nutrition_data: recipe.nutrition_data }),
+          // Include meal_type if it exists
+          ...(recipe.meal_type && { meal_type: recipe.meal_type }),
         }))
 
         console.log(
@@ -243,6 +246,7 @@ export default function MyRecipesPage() {
                   markdown={recipe.markdown}
                   nutritionData={convertToNutritionData(recipe.nutrition_data)}
                   enhancedNutritionData={normalizedNutritionData}
+                  mealType={recipe.meal_type} // Use the meal_type from the database
                 />
               </motion.div>
             )
