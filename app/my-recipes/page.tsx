@@ -10,8 +10,7 @@ import Link from "next/link"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import RecipeCard from "@/components/recipe-card"
 import SignInPrompt from "@/components/sign-in-prompt"
-import { convertToNutritionData } from "@/utils/nutrition-helpers"
-import type { EnhancedNutritionData } from "@/components/enhanced-nutritional-info"
+import type { NutritionApiData } from "@/components/nutrition-display"
 
 type Recipe = {
   id: string
@@ -22,8 +21,8 @@ type Recipe = {
   instructions: string[]
   created_at: string
   markdown?: string
-  nutrition_data?: any
-  meal_type?: string // Added to match the new database column
+  nutrition_data?: NutritionApiData | null
+  meal_type?: string
 }
 
 export default function MyRecipesPage() {
@@ -115,44 +114,6 @@ export default function MyRecipesPage() {
     }
   }
 
-  // Ensure nutrition data has the correct structure
-  const normalizeNutritionData = (data: any): EnhancedNutritionData => {
-    if (!data) {
-      return { calories: 0 }
-    }
-
-    // If data already has the correct structure with macronutrients
-    if (data.macronutrients) {
-      return data as EnhancedNutritionData
-    }
-
-    // If data has direct properties (old format)
-    if (data.protein !== undefined || data.carbs !== undefined || data.fat !== undefined) {
-      return {
-        calories: data.calories || 0,
-        protein: data.protein || 0,
-        carbs: data.carbs || 0,
-        fat: data.fat || 0,
-        fiber: data.fiber || 0,
-        sugar: data.sugar || 0,
-        vitamins: data.vitamins || {},
-        minerals: data.minerals || {},
-      } as EnhancedNutritionData
-    }
-
-    // Default fallback
-    return {
-      calories: data.calories || 0,
-      macronutrients: {
-        protein: 0,
-        carbs: 0,
-        fat: 0,
-        fiber: 0,
-        sugar: 0,
-      },
-    }
-  }
-
   // Show loading state
   if (loading) {
     return (
@@ -221,10 +182,6 @@ export default function MyRecipesPage() {
       <div className="grid gap-6">
         <AnimatePresence>
           {recipes.map((recipe, index) => {
-            // Normalize the nutrition data for display
-            const normalizedNutritionData = normalizeNutritionData(recipe.nutrition_data)
-            console.log(`Recipe ${recipe.id} normalized nutrition data:`, normalizedNutritionData)
-
             return (
               <motion.div
                 key={recipe.id}
@@ -244,9 +201,8 @@ export default function MyRecipesPage() {
                   onDelete={() => deleteRecipe(recipe.id)}
                   isDeleting={deleting === recipe.id}
                   markdown={recipe.markdown}
-                  nutritionData={convertToNutritionData(recipe.nutrition_data)}
-                  enhancedNutritionData={normalizedNutritionData}
-                  mealType={recipe.meal_type} // Use the meal_type from the database
+                  nutritionData={recipe.nutrition_data || null}
+                  mealType={recipe.meal_type}
                 />
               </motion.div>
             )

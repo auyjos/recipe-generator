@@ -1,8 +1,8 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter, usePathname } from "next/navigation"
-import { motion } from "framer-motion"
+import { motion, AnimatePresence } from "framer-motion"
 import { createClient } from "@/utils/supabase/client"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
@@ -13,24 +13,24 @@ import RecipeCard from "@/components/recipe-card"
 import type { User } from "@supabase/supabase-js"
 import IngredientInput from "@/components/ingredient-input"
 import type { MealType } from "@/components/meal-type-selector"
-import { enhancedToBasicNutrition, createDefaultNutrition } from "@/utils/nutrition-helpers"
 // Import icons individually to avoid potential loading issues
-import { Loader2 } from "lucide-react"
-import { Sparkles } from "lucide-react"
+import { Loader2, Sparkles, RefreshCw } from "lucide-react"
 
 // Update the imports to include the enhanced MealTypeSelector component
 import MealTypeSelector from "@/components/meal-type-selector-enhanced"
+import type { NutritionApiData } from "@/components/nutrition-display"
 
 type Recipe = {
+  id?: string // Add an ID for tracking recipe instances
   title: string
   calories: number
   cooking_time: string
   ingredients: string[]
   instructions: string[]
-  nutritionData: any
-  enhancedNutritionData?: any
+  nutritionData: NutritionApiData | null
   markdown?: string
   mealType?: string
+  validationWarning?: string | null
 }
 
 export default function GenerateRecipePage() {
@@ -46,12 +46,14 @@ export default function GenerateRecipePage() {
   const [error, setError] = useState<string | null>(null)
   const [nutritionError, setNutritionError] = useState<string | null>(null)
   const [user, setUser] = useState<User | null>(null)
+  const [regenerating, setRegenerating] = useState(false)
+  const [recipeKey, setRecipeKey] = useState<number>(1) // Key for forcing re-render
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
-  const [enhancedNutrition, setEnhancedNutrition] = useState<any | null>(null)
   const [dietaryExclusions, setDietaryExclusions] = useState<string[]>([])
   const [exclusionInput, setExclusionInput] = useState("")
+  const recipeRef = useRef<HTMLDivElement>(null)
 
   // Check authentication status
   useEffect(() => {
@@ -65,11 +67,37 @@ export default function GenerateRecipePage() {
     checkAuth()
   }, [supabase.auth])
 
+  // Scroll to recipe when it's generated
+  useEffect(() => {
+    if (recipe && recipeRef.current && !loading) {
+      // Use a small timeout to ensure the DOM has updated
+      const timer = setTimeout(() => {
+        recipeRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+      }, 100)
+      return () => clearTimeout(timer)
+    }
+  }, [recipe, loading])
+
   // Generate recipe using AI
-  const generateRecipe = async () => {
+  const generateRecipe = async (isRegeneration = false) => {
+    // Set appropriate loading states
     setLoading(true)
     setError(null)
     setSaveSuccess(false)
+
+    // Preserve the existing recipe ID during regeneration
+    const recipeId = isRegeneration && recipe ? recipe.id : Date.now().toString()
+
+    if (isRegeneration) {
+      setRegenerating(true)
+      // Keep the old recipe visible but show it's being regenerated
+    } else {
+      // Clear the old recipe immediately for a fresh generation
+      setRecipe(null)
+    }
+
+    // Clear nutrition data and errors
+    setNutritionError(null)
 
     try {
       // Call the API route to generate a recipe
@@ -105,30 +133,46 @@ export default function GenerateRecipePage() {
         throw new Error(result.error || "Failed to generate recipe")
       }
 
-      // Create initial nutrition data from the generated recipe
+      // Create the new recipe object with the preserved ID
       const generatedRecipe = result.recipe
-      const initialNutritionData = createDefaultNutrition(generatedRecipe.calories || calories)
-
-      // Set the recipe with the generated data
-      setRecipe({
+      const newRecipe = {
+        id: recipeId, // Use the preserved ID
         title: generatedRecipe.title,
         calories: generatedRecipe.calories || calories,
         cooking_time: generatedRecipe.cooking_time || `${Math.floor(Math.random() * 30 + 15)} minutes`,
         ingredients: generatedRecipe.ingredients,
         instructions: generatedRecipe.instructions,
-        nutritionData: initialNutritionData,
+        nutritionData: null, // Initialize with null, will be populated by fetchNutritionData
         markdown: generatedRecipe.markdown,
         mealType: getMealTypeLabel(mealType),
-      })
+      }
+
+      // Update the recipe state with the new recipe
+      setRecipe(newRecipe)
+
+      // Increment the key to force a re-render of the recipe card
+      setRecipeKey((prev) => prev + 1)
 
       // Get enhanced nutritional information
-      fetchNutritionData(generatedRecipe.ingredients, preferences, mealType, generatedRecipe.calories || calories)
+      fetchNutritionData(
+        generatedRecipe.ingredients,
+        preferences,
+        mealType,
+        generatedRecipe.calories || calories,
+        recipeId, // Pass the preserved ID
+      )
     } catch (err: any) {
       console.error("Recipe generation error:", err)
       setError(err.message || "Failed to generate recipe. Please try again.")
     } finally {
       setLoading(false)
+      setRegenerating(false)
     }
+  }
+
+  // Regenerate recipe with same parameters
+  const handleRegenerate = () => {
+    generateRecipe(true)
   }
 
   // Fetch nutritional data from the API
@@ -137,6 +181,7 @@ export default function GenerateRecipePage() {
     recipePreferences: string = preferences,
     recipeMealType: MealType = mealType,
     recipeCalories: number = calories,
+    recipeId?: string,
   ) => {
     if (recipeIngredients.length === 0) return
 
@@ -144,6 +189,8 @@ export default function GenerateRecipePage() {
     setNutritionError(null)
 
     try {
+      console.log(`Fetching nutrition data for recipe ID: ${recipeId}`)
+
       const response = await fetch("/api/nutrition", {
         method: "POST",
         headers: {
@@ -168,41 +215,40 @@ export default function GenerateRecipePage() {
       }
 
       const result = await response.json()
+      console.log("Nutrition API response:", result.success, result.isMock ? "mock data" : "real data")
 
-      if (!result.success || !result.nutritionData) {
+      if (!result.success) {
         throw new Error(result.error || "Failed to get nutritional information")
       }
 
-      const enhancedData = result.nutritionData
+      // Store the nutrition data directly without transformations
+      const nutritionData = result.nutritionData
+      console.log("Received nutrition data:", nutritionData ? "data present" : "missing data")
 
-      // Ensure vitamins and minerals are properly structured
-      if (enhancedData.vitamins) {
-        // Make sure vitamin values are numbers
-        Object.entries(enhancedData.vitamins).forEach(([key, value]) => {
-          enhancedData.vitamins[key] = typeof value === "number" ? value : Number.parseInt(value as string) || 0
-        })
+      if (!nutritionData) {
+        throw new Error("No nutrition data received from API")
       }
 
-      if (enhancedData.minerals) {
-        // Make sure mineral values are numbers
-        Object.entries(enhancedData.minerals).forEach(([key, value]) => {
-          enhancedData.minerals[key] = typeof value === "number" ? value : Number.parseInt(value as string) || 0
-        })
-      }
+      // Get the current recipe state to ensure we're working with the latest data
+      setRecipe((prevRecipe) => {
+        // If there's no recipe, we can't update it
+        if (!prevRecipe) return null
 
-      setEnhancedNutrition(enhancedData)
+        // Check if the recipe ID matches the one we're expecting
+        // For the first generation, recipeId will match prevRecipe.id
+        // For subsequent generations, we've preserved the ID so they should also match
+        if (!recipeId || prevRecipe.id === recipeId) {
+          console.log(`Updating recipe ${prevRecipe.id} with nutrition data`)
+          return {
+            ...prevRecipe,
+            nutritionData,
+          }
+        }
 
-      // Convert enhanced nutrition data to basic format for the recipe card
-      const basicNutritionData = enhancedToBasicNutrition(enhancedData)
-
-      // Update the recipe with the new nutrition data
-      if (recipe) {
-        setRecipe({
-          ...recipe,
-          nutritionData: basicNutritionData,
-          enhancedNutritionData: enhancedData,
-        })
-      }
+        // If IDs don't match, log it but don't discard the current recipe
+        console.log(`ID mismatch: Recipe ID ${prevRecipe.id} vs Nutrition data ID ${recipeId}`)
+        return prevRecipe
+      })
     } catch (err: any) {
       console.error("Nutrition data error:", err)
       setNutritionError(err.message || "Failed to get nutritional information")
@@ -230,9 +276,6 @@ export default function GenerateRecipePage() {
         return
       }
 
-      // Prioritize enhanced nutrition data from the component over Anthropic data
-      const nutritionDataToSave = enhancedNutrition || recipe.enhancedNutritionData || recipe.nutritionData
-
       // Include nutritional data in the saved recipe
       const recipeData = {
         user_id: session.user.id,
@@ -242,9 +285,9 @@ export default function GenerateRecipePage() {
         ingredients: recipe.ingredients,
         instructions: recipe.instructions,
         markdown: recipe.markdown,
-        // Save the enhanced nutrition data
-        nutrition_data: nutritionDataToSave,
-        // Now we can include the meal_type since the column has been added
+        // Save the nutrition data directly
+        nutrition_data: recipe.nutritionData,
+        // Include the meal_type
         meal_type: recipe.mealType || getMealTypeLabel(mealType),
       }
 
@@ -464,7 +507,7 @@ export default function GenerateRecipePage() {
             </div>
 
             <Button
-              onClick={generateRecipe}
+              onClick={() => generateRecipe(false)}
               disabled={loading || ingredients.length < 3}
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
             >
@@ -488,6 +531,7 @@ export default function GenerateRecipePage() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, delay: 0.2 }}
+          ref={recipeRef}
         >
           {error && (
             <Alert variant="destructive" className="mb-4">
@@ -501,38 +545,78 @@ export default function GenerateRecipePage() {
             </Alert>
           )}
 
-          {recipe ? (
-            <RecipeCard
-              title={recipe.title}
-              calories={recipe.calories}
-              cooking_time={recipe.cooking_time}
-              ingredients={recipe.ingredients}
-              instructions={recipe.instructions}
-              onSave={saveRecipe}
-              isSaving={saving}
-              nutritionData={recipe.nutritionData}
-              enhancedNutritionData={enhancedNutrition || recipe.enhancedNutritionData}
-              isAuthenticated={!!user}
-              currentPath={pathname}
-              markdown={recipe.markdown}
-              isNutritionLoading={nutritionLoading}
-              nutritionError={nutritionError}
-              mealType={recipe.mealType}
-              passIngredientsToNutrition={true}
-            />
-          ) : (
-            <div className="recipe-card flex items-center justify-center p-12 text-center h-full">
-              <div className="space-y-4">
-                <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Sparkles className="h-8 w-8 text-primary" />
+          <AnimatePresence mode="wait">
+            {recipe ? (
+              <motion.div
+                key={`recipe-${recipeKey}`}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.4 }}
+                className={regenerating ? "opacity-50 pointer-events-none" : ""}
+              >
+                <div className="relative">
+                  {regenerating && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-background/50 z-10 rounded-lg">
+                      <div className="bg-card p-4 rounded-lg shadow-lg flex items-center gap-3">
+                        <Loader2 className="h-5 w-5 animate-spin text-primary" />
+                        <span>Regenerating recipe...</span>
+                      </div>
+                    </div>
+                  )}
+
+                  <RecipeCard
+                    title={recipe.title}
+                    calories={recipe.calories}
+                    cooking_time={recipe.cooking_time}
+                    ingredients={recipe.ingredients}
+                    instructions={recipe.instructions}
+                    onSave={saveRecipe}
+                    isSaving={saving}
+                    nutritionData={recipe.nutritionData}
+                    isAuthenticated={!!user}
+                    currentPath={pathname}
+                    markdown={recipe.markdown}
+                    isNutritionLoading={nutritionLoading}
+                    nutritionError={nutritionError}
+                    mealType={recipe.mealType}
+                  />
+
+                  {/* Regenerate button */}
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      variant="outline"
+                      onClick={handleRegenerate}
+                      disabled={loading || regenerating}
+                      className="flex items-center gap-2"
+                    >
+                      {regenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      Regenerate Recipe
+                    </Button>
+                  </div>
                 </div>
-                <h3 className="text-lg font-medium">Your recipe will appear here</h3>
-                <p className="text-muted-foreground max-w-xs mx-auto">
-                  Fill out your preferences, add ingredients, and click "Generate Recipe" to see the result.
-                </p>
-              </div>
-            </div>
-          )}
+              </motion.div>
+            ) : (
+              <motion.div
+                key="empty-state"
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.4 }}
+                className="recipe-card flex items-center justify-center p-12 text-center h-full"
+              >
+                <div className="space-y-4">
+                  <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
+                    <Sparkles className="h-8 w-8 text-primary" />
+                  </div>
+                  <h3 className="text-lg font-medium">Your recipe will appear here</h3>
+                  <p className="text-muted-foreground max-w-xs mx-auto">
+                    Fill out your preferences, add ingredients, and click "Generate Recipe" to see the result.
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       </div>
     </div>

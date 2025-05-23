@@ -116,26 +116,36 @@ The total calories from macronutrients (protein × 4 + carbs × 4 + fat × 9) sh
         const jsonString = jsonMatch ? jsonMatch[1] || jsonMatch[0] : content
         const nutritionData = JSON.parse(jsonString.replace(/```/g, "").trim())
 
+        // Log the parsed nutrition data for debugging
+        console.log("Successfully parsed nutrition data:", JSON.stringify(nutritionData).slice(0, 200) + "...")
+
         return NextResponse.json({
           success: true,
           nutritionData,
         })
       } catch (parseError) {
-        console.error("Error parsing nutrition data:", parseError)
+        console.error("Error parsing nutrition data:", parseError, "Raw content:", content.slice(0, 500))
         // Fallback to generating mock nutrition data
+        const mockData = generateMockNutritionData(calories)
+        console.log("Using mock nutrition data:", JSON.stringify(mockData).slice(0, 200) + "...")
+
         return NextResponse.json({
           success: true,
-          nutritionData: generateMockNutritionData(calories),
+          nutritionData: mockData,
           isMock: true,
+          parseError: parseError.message,
         })
       }
     } catch (apiError: any) {
       console.error("Anthropic API error:", apiError)
 
       // If the API call fails, generate mock nutrition data
+      const mockData = generateMockNutritionData(calories)
+      console.log("Using mock nutrition data due to API error:", JSON.stringify(mockData).slice(0, 200) + "...")
+
       return NextResponse.json({
         success: true,
-        nutritionData: generateMockNutritionData(calories),
+        nutritionData: mockData,
         isMock: true,
         apiError: apiError.message,
       })
