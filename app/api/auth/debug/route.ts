@@ -4,11 +4,11 @@ import { cookies } from "next/headers"
 
 export async function GET() {
   try {
-    const supabase = createClient()
+    const supabase = await createClient()
     const { data, error } = await supabase.auth.getSession()
 
     // Get all cookies for debugging
-    const cookieStore = cookies()
+    const cookieStore = await cookies()
     const allCookies = cookieStore.getAll()
     const supabaseCookies = allCookies.filter(
       (cookie) => cookie.name.includes("supabase") || cookie.name.includes("sb-"),
@@ -33,10 +33,10 @@ export async function GET() {
       authenticated: !!data.session,
       user: data.session
         ? {
-            id: data.session.user.id,
-            email: data.session.user.email,
-            lastSignInAt: data.session.user.last_sign_in_at,
-          }
+          id: data.session.user.id,
+          email: data.session.user.email,
+          lastSignInAt: data.session.user.last_sign_in_at,
+        }
         : null,
       sessionExpires: data.session?.expires_at,
       cookies: {

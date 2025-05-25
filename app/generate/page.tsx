@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Checkbox } from "@/components/ui/checkbox"
 import { AlertDescription, Alert } from "@/components/ui/alert"
 import RecipeCard from "@/components/recipe-card"
 import type { User } from "@supabase/supabase-js"
@@ -36,8 +37,19 @@ type Recipe = {
 export default function GenerateRecipePage() {
   const [preferences, setPreferences] = useState("")
   const [ingredients, setIngredients] = useState<string[]>([])
-  const [mealType, setMealType] = useState<MealType>("snack")
-  const [calories, setCalories] = useState(200)
+  const [mealType, setMealType] = useState<MealType>("breakfast")
+  const [calories, setCalories] = useState(400)
+  // Add new state for checkbox preferences
+  const [nutritionalGoals, setNutritionalGoals] = useState({
+    highProtein: false,
+    highVolume: false,
+    highFiber: false,
+    lowCarb: false,
+    lowFat: false,
+    quickAndEasy: false
+  })
+  // Add state for calorie validation
+  const [calorieError, setCalorieError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [nutritionLoading, setNutritionLoading] = useState(false)
   const [recipe, setRecipe] = useState<Recipe | null>(null)
@@ -48,6 +60,7 @@ export default function GenerateRecipePage() {
   const [user, setUser] = useState<User | null>(null)
   const [regenerating, setRegenerating] = useState(false)
   const [recipeKey, setRecipeKey] = useState<number>(1) // Key for forcing re-render
+  const [recipeIdCounter, setRecipeIdCounter] = useState<number>(1) // Counter for unique IDs
   const router = useRouter()
   const pathname = usePathname()
   const supabase = createClient()
@@ -80,13 +93,13 @@ export default function GenerateRecipePage() {
 
   // Generate recipe using AI
   const generateRecipe = async (isRegeneration = false) => {
-    // Set appropriate loading states
+    // Set appropriate loading states    
     setLoading(true)
     setError(null)
     setSaveSuccess(false)
 
     // Preserve the existing recipe ID during regeneration
-    const recipeId = isRegeneration && recipe ? recipe.id : Date.now().toString()
+    const recipeId = isRegeneration && recipe ? recipe.id : `recipe-${recipeIdCounter}`
 
     if (isRegeneration) {
       setRegenerating(true)
@@ -94,12 +107,45 @@ export default function GenerateRecipePage() {
     } else {
       // Clear the old recipe immediately for a fresh generation
       setRecipe(null)
-    }
-
-    // Clear nutrition data and errors
+      // Increment counter for new recipes to ensure unique IDs
+      setRecipeIdCounter(prev => prev + 1)
+    }// Clear nutrition data and errors
     setNutritionError(null)
 
-    try {
+    try {      // Build preferences string from checkboxes
+      const selectedGoals = Object.entries(nutritionalGoals)
+        .filter(([_, selected]) => selected)
+        .map(([goal, _]) => {
+          switch (goal) {
+            case 'highProtein': return 'high in protein'
+            case 'highVolume': return 'high volume/low calorie density'
+            case 'highFiber': return 'high in fiber'
+            case 'lowCarb': return 'low carb'
+            case 'lowFat': return 'low fat'
+            case 'quickAndEasy': return 'quick and easy to prepare'
+            default: return goal
+          }
+        })
+
+      const builtPreferences = selectedGoals.length > 0
+        ? `Make this recipe ${selectedGoals.join(', ')}.`
+        : ''
+
+      // Combine with any additional preferences and dietary exclusions
+      const finalPreferences = [
+        builtPreferences,
+        preferences,
+        dietaryExclusions.length > 0 ? `Exclude: ${dietaryExclusions.join(", ")}` : "",
+        "Please provide ingredient quantities in grams where possible for accuracy."
+      ].filter(Boolean).join(" ")
+
+      // Debug logging
+      console.log("🔍 Recipe Generation Debug:")
+      console.log("Selected nutritional goals:", nutritionalGoals)
+      console.log("Translated goals:", selectedGoals)
+      console.log("Built preferences:", builtPreferences)
+      console.log("Final preferences being sent to API:", finalPreferences)
+
       // Call the API route to generate a recipe
       const response = await fetch("/api/generate-recipe", {
         method: "POST",
@@ -108,10 +154,7 @@ export default function GenerateRecipePage() {
         },
         body: JSON.stringify({
           ingredients,
-          preferences:
-            preferences +
-            (dietaryExclusions.length > 0 ? `. Exclude: ${dietaryExclusions.join(", ")}` : "") +
-            ". Please provide ingredient quantities in grams where possible for accuracy.",
+          preferences: finalPreferences,
           mealType,
           calories,
         }),
@@ -183,14 +226,10 @@ export default function GenerateRecipePage() {
     recipeCalories: number = calories,
     recipeId?: string,
   ) => {
-    if (recipeIngredients.length === 0) return
-
-    setNutritionLoading(true)
+    if (recipeIngredients.length === 0) return setNutritionLoading(true)
     setNutritionError(null)
 
     try {
-      console.log(`Fetching nutrition data for recipe ID: ${recipeId}`)
-
       const response = await fetch("/api/nutrition", {
         method: "POST",
         headers: {
@@ -212,10 +251,7 @@ export default function GenerateRecipePage() {
         } catch (jsonError) {
           throw new Error(`Server error: ${errorText || response.statusText || response.status}`)
         }
-      }
-
-      const result = await response.json()
-      console.log("Nutrition API response:", result.success, result.isMock ? "mock data" : "real data")
+      } const result = await response.json()
 
       if (!result.success) {
         throw new Error(result.error || "Failed to get nutritional information")
@@ -246,7 +282,6 @@ export default function GenerateRecipePage() {
         }
 
         // If IDs don't match, log it but don't discard the current recipe
-        console.log(`ID mismatch: Recipe ID ${prevRecipe.id} vs Nutrition data ID ${recipeId}`)
         return prevRecipe
       })
     } catch (err: any) {
@@ -336,10 +371,52 @@ export default function GenerateRecipePage() {
   const removeDietaryExclusion = (exclusion: string) => {
     setDietaryExclusions(dietaryExclusions.filter((item) => item !== exclusion))
   }
-
   const addQuickExclusion = (exclusion: string) => {
     if (!dietaryExclusions.includes(exclusion)) {
       setDietaryExclusions([...dietaryExclusions, exclusion])
+    }
+  }
+
+  // Handle checkbox changes
+  const handleGoalChange = (goal: keyof typeof nutritionalGoals) => {
+    setNutritionalGoals(prev => ({
+      ...prev,
+      [goal]: !prev[goal]
+    }))
+  }
+  // Handle calorie input with validation
+  const handleCalorieChange = (value: string) => {
+    // Allow empty input for better UX
+    if (value === "") {
+      setCalories(0)
+      setCalorieError("Please enter a calorie target")
+      return
+    }
+
+    const numValue = Number(value)
+
+    // Check if it's a valid number
+    if (isNaN(numValue)) {
+      setCalorieError("Please enter a valid number")
+      return
+    }
+
+    // Don't allow negative numbers
+    if (numValue < 0) {
+      setCalorieError("Calories cannot be negative")
+      return
+    }
+
+    // Set the value first
+    setCalories(numValue)
+
+    // Validate range with helpful messages
+    if (numValue < 100) {
+      setCalorieError(`Too low! Minimum is 100 calories (you entered ${numValue})`)
+    } else if (numValue > 2000) {
+      setCalorieError(`Too high! Maximum is 2000 calories (you entered ${numValue})`)
+    } else {
+      setCalorieError(null) // Clear error if valid
     }
   }
 
@@ -368,23 +445,46 @@ export default function GenerateRecipePage() {
                   </p>
                 </div>
               </div>
-            </div>
-
-            {/* Target Calories */}
+            </div>            {/* Target Calories */}
             <div className="mb-6">
               <Label htmlFor="calories" className="block mb-2">
                 Target Calories
               </Label>
+              <p className="text-xs text-muted-foreground mb-2">
+                Set your target calories (100 - 2000 calories)
+              </p>
               <Input
                 id="calories"
                 type="number"
-                value={calories}
-                onChange={(e) => setCalories(Number(e.target.value))}
+                value={calories || ""}
+                onChange={(e) => handleCalorieChange(e.target.value)}
                 min={100}
-                max={1000}
+                max={2000}
                 step={50}
-                className="bg-background border-input focus:border-primary"
+                placeholder="Enter calories (100-2000)"
+                className={`bg-background border-input focus:border-primary transition-colors ${calorieError
+                  ? "border-destructive focus:border-destructive"
+                  : calories >= 100 && calories <= 2000
+                    ? "border-green-500 focus:border-green-500"
+                    : ""
+                  }`}
               />
+              {calorieError && (
+                <div className="flex items-center mt-2 text-destructive text-sm">
+                  <svg className="w-4 h-4 mr-1 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  {calorieError}
+                </div>
+              )}
+              {!calorieError && calories >= 100 && calories <= 2000 && (
+                <div className="flex items-center mt-2 text-green-600 text-sm">
+                  <svg className="w-4 h-4 mr-1 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                  </svg>
+                  Great! This calorie target looks good.
+                </div>
+              )}
             </div>
 
             {/* Meal Type */}
@@ -490,26 +590,157 @@ export default function GenerateRecipePage() {
                   ))}
                 </div>
               )}
+            </div>            {/* Nutritional Goals */}
+            <div className="mb-6">
+              <Label className="block mb-3">
+                Nutritional Goals
+              </Label>
+              <p className="text-xs text-muted-foreground mb-4">
+                Select your nutritional preferences for this recipe.
+              </p>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="highProtein"
+                    checked={nutritionalGoals.highProtein}
+                    onCheckedChange={() => handleGoalChange('highProtein')}
+                    className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                  />
+                  <Label
+                    htmlFor="highProtein"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  >
+                    High Protein
+                  </Label>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="highVolume"
+                    checked={nutritionalGoals.highVolume}
+                    onCheckedChange={() => handleGoalChange('highVolume')}
+                    className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                  />
+                  <Label
+                    htmlFor="highVolume"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  >
+                    High Volume
+                  </Label>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="highFiber"
+                    checked={nutritionalGoals.highFiber}
+                    onCheckedChange={() => handleGoalChange('highFiber')}
+                    className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                  />
+                  <Label
+                    htmlFor="highFiber"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  >
+                    High Fiber
+                  </Label>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="lowCarb"
+                    checked={nutritionalGoals.lowCarb}
+                    onCheckedChange={() => handleGoalChange('lowCarb')}
+                    className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                  />
+                  <Label
+                    htmlFor="lowCarb"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  >
+                    Low Carb
+                  </Label>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="lowFat"
+                    checked={nutritionalGoals.lowFat}
+                    onCheckedChange={() => handleGoalChange('lowFat')}
+                    className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                  />
+                  <Label
+                    htmlFor="lowFat"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  >
+                    Low Fat
+                  </Label>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="quickAndEasy"
+                    checked={nutritionalGoals.quickAndEasy}
+                    onCheckedChange={() => handleGoalChange('quickAndEasy')}
+                    className="data-[state=checked]:bg-primary data-[state=checked]:border-primary"
+                  />
+                  <Label
+                    htmlFor="quickAndEasy"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                  >
+                    Quick & Easy
+                  </Label>
+                </div>
+              </div>
+
+              {/* Visual feedback - shows selected preferences as styled tags */}
+              {Object.values(nutritionalGoals).some(Boolean) && (
+                <div className="mt-4 p-3 bg-muted/50 border border-muted rounded-lg">
+                  <p className="text-xs text-muted-foreground mb-2 font-medium">Selected preferences:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {Object.entries(nutritionalGoals)
+                      .filter(([_, selected]) => selected)
+                      .map(([goal, _]) => {
+                        const label = (() => {
+                          switch (goal) {
+                            case 'highProtein': return 'High Protein'
+                            case 'highVolume': return 'High Volume'
+                            case 'highFiber': return 'High Fiber'
+                            case 'lowCarb': return 'Low Carb'
+                            case 'lowFat': return 'Low Fat'
+                            case 'quickAndEasy': return 'Quick & Easy'
+                            default: return goal
+                          }
+                        })()
+                        return (
+                          <span
+                            key={goal}
+                            className="inline-flex items-center px-2 py-1 rounded-md bg-primary/10 text-primary text-xs font-medium"
+                          >
+                            {label}
+                          </span>
+                        )
+                      })}
+                  </div>
+                </div>
+              )}
             </div>
 
-            {/* Preferences */}
+            {/* Additional Notes */}
             <div className="mb-6">
-              <Label htmlFor="preferences" className="block mb-2">
-                Additional Preferences
+              <Label htmlFor="additionalNotes" className="block mb-2">
+                Additional Notes (optional)
               </Label>
               <Textarea
-                id="preferences"
-                placeholder="Describe what you're looking for (e.g., quick and easy, vegetarian, spicy, etc.)"
+                id="additionalNotes"
+                placeholder="Any other specific requirements or preferences..."
                 value={preferences}
                 onChange={(e) => setPreferences(e.target.value)}
-                className="min-h-[80px] resize-none bg-background border-input focus:border-primary"
+                className="min-h-[60px] resize-none bg-background border-input focus:border-primary"
+                rows={2}
               />
-            </div>
-
-            <Button
+            </div>            <Button
               onClick={() => generateRecipe(false)}
-              disabled={loading || ingredients.length < 3}
-              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+              disabled={loading || ingredients.length < 3 || !!calorieError || calories < 100 || calories > 2000}
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
                 <>
@@ -565,6 +796,19 @@ export default function GenerateRecipePage() {
                     </div>
                   )}
 
+                  {/* Regenerate button */}
+                  <div className="mt-4 flex justify-end">
+                    <Button
+                      variant="outline"
+                      onClick={handleRegenerate}
+                      disabled={loading || regenerating}
+                      className="flex items-center gap-2"
+                    >
+                      {regenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      Regenerate Recipe
+                    </Button>
+                  </div>
+
                   <RecipeCard
                     title={recipe.title}
                     calories={recipe.calories}
@@ -582,18 +826,7 @@ export default function GenerateRecipePage() {
                     mealType={recipe.mealType}
                   />
 
-                  {/* Regenerate button */}
-                  <div className="mt-4 flex justify-end">
-                    <Button
-                      variant="outline"
-                      onClick={handleRegenerate}
-                      disabled={loading || regenerating}
-                      className="flex items-center gap-2"
-                    >
-                      {regenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                      Regenerate Recipe
-                    </Button>
-                  </div>
+
                 </div>
               </motion.div>
             ) : (
