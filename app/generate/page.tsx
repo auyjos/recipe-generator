@@ -15,7 +15,7 @@ import type { User } from "@supabase/supabase-js"
 import IngredientInput from "@/components/ingredient-input"
 import type { MealType } from "@/components/meal-type-selector"
 // Import icons individually to avoid potential loading issues
-import { Loader2, Sparkles, RefreshCw } from "lucide-react"
+import { Loader2, Sparkles, RefreshCw, RotateCcw } from "lucide-react"
 
 // Update the imports to include the enhanced MealTypeSelector component
 import MealTypeSelector from "@/components/meal-type-selector-enhanced"
@@ -401,23 +401,51 @@ export default function GenerateRecipePage() {
       return
     }
 
-    // Don't allow negative numbers
-    if (numValue < 0) {
-      setCalorieError("Calories cannot be negative")
+    // Check range
+    if (numValue < 100) {
+      setCalorieError(`Too low - minimum is 100 calories (you entered ${numValue})`)
+      setCalories(numValue) // Still update the value for user feedback
       return
     }
 
-    // Set the value first
-    setCalories(numValue)
-
-    // Validate range with helpful messages
-    if (numValue < 100) {
-      setCalorieError(`Too low! Minimum is 100 calories (you entered ${numValue})`)
-    } else if (numValue > 2000) {
-      setCalorieError(`Too high! Maximum is 2000 calories (you entered ${numValue})`)
-    } else {
-      setCalorieError(null) // Clear error if valid
+    if (numValue > 2000) {
+      setCalorieError(`Too high - maximum is 2000 calories (you entered ${numValue})`)
+      setCalories(numValue) // Still update the value for user feedback
+      return
     }
+
+    // Valid calorie range
+    setCalorieError(null)
+    setCalories(numValue)
+  }
+
+  // Clear All functionality
+  const clearAllInputs = () => {
+    // Reset all form inputs to their default values
+    setIngredients([])
+    setMealType("breakfast")
+    setCalories(400)
+    setNutritionalGoals({
+      highProtein: false,
+      highVolume: false,
+      highFiber: false,
+      lowCarb: false,
+      lowFat: false,
+      quickAndEasy: false
+    })
+    setPreferences("")
+    setDietaryExclusions([])
+    setExclusionInput("")
+
+    // Clear validation and error states
+    setCalorieError(null)
+    setError(null)
+    setSaveSuccess(false)
+
+    // Clear generated recipe and related states
+    setRecipe(null)
+    setNutritionError(null)
+    setRecipeKey(prev => prev + 1) // Force re-render if needed
   }
 
   return (
@@ -753,7 +781,17 @@ export default function GenerateRecipePage() {
                   Generate Recipe
                 </>
               )}
-            </Button>
+            </Button>            {/* Clear All button */}
+            <div className="mt-4">
+              <Button
+                onClick={clearAllInputs}
+                variant="outline"
+                className="w-full"
+              >
+                <RotateCcw className="mr-2 h-4 w-4" />
+                Clear All
+              </Button>
+            </div>
           </div>
         </motion.div>
 
