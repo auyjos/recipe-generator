@@ -4,11 +4,9 @@ import { createClient } from "@/utils/supabase/server"
 
 export async function middleware(request: NextRequest) {
   try {
-    const { pathname } = request.nextUrl
-
-    // We're no longer redirecting users automatically
+    const { pathname } = request.nextUrl    // We're no longer redirecting users automatically
     // Instead, we'll just add the session to the request for pages to use
-    const supabase = createClient()
+    const supabase = await createClient()
 
     try {
       // Wrap in try/catch to handle auth errors gracefully

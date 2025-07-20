@@ -44,6 +44,13 @@ export async function POST(request: Request) {
     const body = await request.json()
     const { ingredients, preferences, mealType, calories } = body
 
+    // Debug logging
+    console.log("🔍 API Route Debug - Received request:")
+    console.log("Ingredients:", ingredients)
+    console.log("Preferences:", preferences)
+    console.log("Meal Type:", mealType)
+    console.log("Calories:", calories)
+
     if (!ingredients || !Array.isArray(ingredients) || ingredients.length < 3) {
       return NextResponse.json({ success: false, error: "At least 3 ingredients are required" }, { status: 400 })
     }
