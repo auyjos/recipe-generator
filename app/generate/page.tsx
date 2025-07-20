@@ -16,6 +16,7 @@ import IngredientInput from "@/components/ingredient-input"
 import type { MealType } from "@/components/meal-type-selector"
 // Import icons individually to avoid potential loading issues
 import { Loader2, Sparkles, RefreshCw, RotateCcw } from "lucide-react"
+import logger from "@/utils/logger"
 
 // Update the imports to include the enhanced MealTypeSelector component
 import MealTypeSelector from "@/components/meal-type-selector-enhanced"
@@ -140,11 +141,21 @@ export default function GenerateRecipePage() {
       ].filter(Boolean).join(" ")
 
       // Debug logging
-      console.log("🔍 Recipe Generation Debug:")
-      console.log("Selected nutritional goals:", nutritionalGoals)
-      console.log("Translated goals:", selectedGoals)
-      console.log("Built preferences:", builtPreferences)
-      console.log("Final preferences being sent to API:", finalPreferences)
+      logger.recipe.generation("Recipe Generation Debug:", {
+        nutritionalGoals,
+        selectedGoals,
+        builtPreferences,
+        finalPreferences
+      })
+
+      const requestPayload = {
+        ingredients,
+        preferences: finalPreferences,
+        mealType,
+        calories,
+      }
+
+      logger.api.start("FRONTEND: Calling Generate Recipe API", requestPayload)
 
       // Call the API route to generate a recipe
       const response = await fetch("/api/generate-recipe", {
@@ -152,16 +163,22 @@ export default function GenerateRecipePage() {
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          ingredients,
-          preferences: finalPreferences,
-          mealType,
-          calories,
-        }),
+        body: JSON.stringify(requestPayload),
+      })
+
+      logger.api.response("API Response Status:", {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries())
       })
 
       if (!response.ok) {
         const errorText = await response.text()
+        logger.error("❌ API Error Response:", {
+          status: response.status,
+          statusText: response.statusText,
+          errorText: errorText
+        })
         try {
           const errorJson = JSON.parse(errorText)
           throw new Error(errorJson.error || `Server error: ${response.status}`)
@@ -171,6 +188,20 @@ export default function GenerateRecipePage() {
       }
 
       const result = await response.json()
+      logger.api.success("Successful API Response:", {
+        success: result.success,
+        hasRecipe: !!result.recipe,
+        isMock: result.isMock || false,
+        recipeTitle: result.recipe?.title || "No title",
+        recipeCalories: result.recipe?.calories || "No calories",
+        ingredientCount: result.recipe?.ingredients?.length || 0,
+        instructionCount: result.recipe?.instructions?.length || 0,
+        hasMarkdown: !!result.recipe?.markdown
+      })
+
+      if (result.isMock) {
+        logger.warn("⚠️  Using mock recipe due to API failure:", result.apiError)
+      }
 
       if (!result.success || !result.recipe) {
         throw new Error(result.error || "Failed to generate recipe")
@@ -178,6 +209,13 @@ export default function GenerateRecipePage() {
 
       // Create the new recipe object with the preserved ID
       const generatedRecipe = result.recipe
+      logger.recipe.generation("Creating recipe object from API response:", {
+        generatedRecipe,
+        recipeId,
+        calories,
+        mealType
+      })
+
       const newRecipe = {
         id: recipeId, // Use the preserved ID
         title: generatedRecipe.title,
@@ -190,12 +228,16 @@ export default function GenerateRecipePage() {
         mealType: getMealTypeLabel(mealType),
       }
 
+      logger.recipe.generation("Final recipe object created:", newRecipe)
+
       // Update the recipe state with the new recipe
       setRecipe(newRecipe)
+      logger.log("✅ Recipe state updated successfully")
 
       // Increment the key to force a re-render of the recipe card
       setRecipeKey((prev) => prev + 1)
 
+      logger.recipe.nutrition("Starting nutrition data fetch for recipe:", recipeId)
       // Get enhanced nutritional information
       fetchNutritionData(
         generatedRecipe.ingredients,
@@ -205,7 +247,7 @@ export default function GenerateRecipePage() {
         recipeId, // Pass the preserved ID
       )
     } catch (err: any) {
-      console.error("Recipe generation error:", err)
+      logger.error("Recipe generation error:", err)
       setError(err.message || "Failed to generate recipe. Please try again.")
     } finally {
       setLoading(false)
@@ -226,32 +268,70 @@ export default function GenerateRecipePage() {
     recipeCalories: number = calories,
     recipeId?: string,
   ) => {
-    if (recipeIngredients.length === 0) return setNutritionLoading(true)
+    logger.api.start("NUTRITION API", {
+      ingredients: recipeIngredients,
+      preferences: recipePreferences,
+      mealType: recipeMealType,
+      calories: recipeCalories,
+      recipeId: recipeId
+    })
+
+    if (recipeIngredients.length === 0) {
+      logger.warn("⚠️  No ingredients provided, skipping nutrition fetch")
+      return setNutritionLoading(true)
+    }
+
+    setNutritionLoading(true)
     setNutritionError(null)
 
     try {
+      const nutritionPayload = {
+        ingredients: recipeIngredients,
+        preferences: recipePreferences,
+        mealType: recipeMealType,
+        calories: recipeCalories,
+      }
+
+      logger.api.request("Nutrition API Request:", nutritionPayload)
+
       const response = await fetch("/api/nutrition", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          ingredients: recipeIngredients,
-          preferences: recipePreferences,
-          mealType: recipeMealType,
-          calories: recipeCalories,
-        }),
+        body: JSON.stringify(nutritionPayload),
+      })
+
+      logger.api.response("Nutrition API Response Status:", {
+        status: response.status,
+        statusText: response.statusText
       })
 
       if (!response.ok) {
         const errorText = await response.text()
+        logger.error("❌ Nutrition API Error:", {
+          status: response.status,
+          statusText: response.statusText,
+          errorText: errorText
+        })
         try {
           const errorJson = JSON.parse(errorText)
           throw new Error(errorJson.error || `Server error: ${response.status}`)
         } catch (jsonError) {
           throw new Error(`Server error: ${errorText || response.statusText || response.status}`)
         }
-      } const result = await response.json()
+      }
+
+      const result = await response.json()
+
+      logger.api.success("Nutrition API Success Response:", {
+        success: result.success,
+        hasNutritionData: !!result.nutritionData,
+        calories: result.nutritionData?.calories || "No calories",
+        hasMacronutrients: !!result.nutritionData?.macronutrients,
+        hasVitamins: !!result.nutritionData?.vitamins,
+        hasMinerals: !!result.nutritionData?.minerals
+      })
 
       if (!result.success) {
         throw new Error(result.error || "Failed to get nutritional information")
@@ -259,7 +339,10 @@ export default function GenerateRecipePage() {
 
       // Store the nutrition data directly without transformations
       const nutritionData = result.nutritionData
-      console.log("Received nutrition data:", nutritionData ? "data present" : "missing data")
+      logger.recipe.nutrition("Raw nutrition data from API:", {
+        nutritionData,
+        hasData: nutritionData ? "data present" : "missing data"
+      })
 
       if (!nutritionData) {
         throw new Error("No nutrition data received from API")
@@ -267,25 +350,44 @@ export default function GenerateRecipePage() {
 
       // Get the current recipe state to ensure we're working with the latest data
       setRecipe((prevRecipe) => {
+        logger.recipe.update("Updating recipe with nutrition data:", {
+          previousRecipeId: prevRecipe?.id || "No previous recipe",
+          expectedRecipeId: recipeId || "No expected ID",
+          nutritionDataStructure: {
+            calories: nutritionData.calories,
+            hasMacronutrients: !!nutritionData.macronutrients,
+            hasVitamins: !!nutritionData.vitamins,
+            hasMinerals: !!nutritionData.minerals
+          }
+        })
+
         // If there's no recipe, we can't update it
-        if (!prevRecipe) return null
+        if (!prevRecipe) {
+          logger.warn("⚠️  No previous recipe to update with nutrition data")
+          return null
+        }
 
         // Check if the recipe ID matches the one we're expecting
         // For the first generation, recipeId will match prevRecipe.id
         // For subsequent generations, we've preserved the ID so they should also match
         if (!recipeId || prevRecipe.id === recipeId) {
-          console.log(`Updating recipe ${prevRecipe.id} with nutrition data`)
-          return {
+          logger.log(`✅ Updating recipe ${prevRecipe.id} with nutrition data`)
+          const updatedRecipe = {
             ...prevRecipe,
             nutritionData,
           }
+          logger.recipe.update("Updated recipe object:", updatedRecipe)
+          return updatedRecipe
         }
 
         // If IDs don't match, log it but don't discard the current recipe
+        logger.warn(`⚠️  ID mismatch: Recipe ID ${prevRecipe.id} vs Nutrition data ID ${recipeId}`)
         return prevRecipe
       })
+
+      logger.api.end("NUTRITION API")
     } catch (err: any) {
-      console.error("Nutrition data error:", err)
+      logger.error("Nutrition data error:", err)
       setNutritionError(err.message || "Failed to get nutritional information")
     } finally {
       setNutritionLoading(false)
@@ -329,7 +431,7 @@ export default function GenerateRecipePage() {
       const { error } = await supabase.from("favorite_recipes").insert(recipeData)
 
       if (error) {
-        console.error("Database error:", error)
+        logger.error("Database error:", error)
         if (error.code === "23505") {
           setError("You already saved this recipe")
         } else {
@@ -339,7 +441,7 @@ export default function GenerateRecipePage() {
         setSaveSuccess(true)
       }
     } catch (err: any) {
-      console.error("Save recipe error:", err)
+      logger.error("Save recipe error:", err)
       setError(`Failed to save recipe: ${err.message}`)
     } finally {
       setSaving(false)

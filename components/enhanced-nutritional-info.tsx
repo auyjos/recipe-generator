@@ -75,14 +75,14 @@ export default function EnhancedNutritionalInfo({
   // Sort vitamins and minerals by value (highest first)
   const sortedVitamins = data.vitamins
     ? Object.entries(data.vitamins)
-        .sort(([, valueA], [, valueB]) => valueB - valueA)
-        .map(([name, value]) => ({ name, value }))
+      .sort(([, valueA], [, valueB]) => valueB - valueA)
+      .map(([name, value]) => ({ name, value }))
     : []
 
   const sortedMinerals = data.minerals
     ? Object.entries(data.minerals)
-        .sort(([, valueA], [, valueB]) => valueB - valueA)
-        .map(([name, value]) => ({ name, value }))
+      .sort(([, valueA], [, valueB]) => valueB - valueA)
+      .map(([name, value]) => ({ name, value }))
     : []
 
   // Group micronutrients for better display (3 per row)
@@ -108,6 +108,31 @@ export default function EnhancedNutritionalInfo({
 
   // Validate nutritional data against ingredients
   useEffect(() => {
+    console.log("🥗 Enhanced Nutritional Info Component - Data received:")
+    console.log("Full data object:", JSON.stringify(data, null, 2))
+    console.log("Data analysis:", {
+      calories: data.calories,
+      hasMacronutrients: !!data.macronutrients,
+      macronutrients: data.macronutrients,
+      hasDirectProps: !!(data.protein || data.carbs || data.fat),
+      directProps: {
+        protein: data.protein,
+        carbs: data.carbs,
+        fat: data.fat
+      },
+      extractedValues: {
+        protein,
+        carbs,
+        fat,
+        fiber,
+        sugar
+      },
+      hasVitamins: !!data.vitamins,
+      vitaminCount: data.vitamins ? Object.keys(data.vitamins).length : 0,
+      hasMinerals: !!data.minerals,
+      mineralCount: data.minerals ? Object.keys(data.minerals).length : 0
+    })
+
     if (ingredients.length > 0 && data.calories > 0) {
       const ingredientsWithQuantities = extractIngredientsWithQuantities(ingredients)
 
@@ -122,7 +147,7 @@ export default function EnhancedNutritionalInfo({
       }
     }
   }, [ingredients, data.calories, protein, carbs, fat])
-
+  console.log(data)
   return (
     <Card className="w-full overflow-hidden">
       <CardHeader className="pb-2">

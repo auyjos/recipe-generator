@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import logger from "@/utils/logger"
 
 // Create a system prompt for nutritional analysis
 const SYSTEM_PROMPT = `
@@ -117,31 +118,40 @@ The total calories from macronutrients (protein × 4 + carbs × 4 + fat × 9) sh
         const nutritionData = JSON.parse(jsonString.replace(/```/g, "").trim())
 
         // Log the parsed nutrition data for debugging
-        console.log("Successfully parsed nutrition data:", JSON.stringify(nutritionData).slice(0, 200) + "...")
+        logger.api.success("Successfully parsed nutrition data:",
+          JSON.stringify(nutritionData).slice(0, 200) + "..."
+        )
 
         return NextResponse.json({
           success: true,
           nutritionData,
         })
       } catch (parseError) {
-        console.error("Error parsing nutrition data:", parseError, "Raw content:", content.slice(0, 500))
+        logger.error("Error parsing nutrition data:", {
+          parseError: parseError,
+          rawContent: content.slice(0, 500)
+        })
         // Fallback to generating mock nutrition data
         const mockData = generateMockNutritionData(calories)
-        console.log("Using mock nutrition data:", JSON.stringify(mockData).slice(0, 200) + "...")
+        logger.warn("Using mock nutrition data:", JSON.stringify(mockData).slice(0, 200) + "...")
 
         return NextResponse.json({
           success: true,
           nutritionData: mockData,
           isMock: true,
-          parseError: parseError.message,
+          parseError: typeof parseError === "object" && parseError !== null && "message" in parseError
+            ? (parseError as Error).message
+            : String(parseError),
         })
       }
     } catch (apiError: any) {
-      console.error("Anthropic API error:", apiError)
+      logger.error("Anthropic API error:", apiError)
 
       // If the API call fails, generate mock nutrition data
       const mockData = generateMockNutritionData(calories)
-      console.log("Using mock nutrition data due to API error:", JSON.stringify(mockData).slice(0, 200) + "...")
+      logger.warn("Using mock nutrition data due to API error:",
+        JSON.stringify(mockData).slice(0, 200) + "..."
+      )
 
       return NextResponse.json({
         success: true,
@@ -151,7 +161,7 @@ The total calories from macronutrients (protein × 4 + carbs × 4 + fat × 9) sh
       })
     }
   } catch (error: any) {
-    console.error("Error in nutrition route:", error)
+    logger.error("Error in nutrition route:", error)
 
     // Ensure we always return a valid JSON response
     return NextResponse.json(

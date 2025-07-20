@@ -11,6 +11,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import RecipeCard from "@/components/recipe-card"
 import SignInPrompt from "@/components/sign-in-prompt"
 import type { NutritionApiData } from "@/components/nutrition-display"
+import logger from "@/utils/logger"
 
 type Recipe = {
   id: string
@@ -79,13 +80,12 @@ export default function MyRecipesPage() {
           ...(recipe.meal_type && { meal_type: recipe.meal_type }),
         }))
 
-        console.log(
-          "Fetched recipes with nutrition data:",
-          processedData.map((r) => r.nutrition_data),
+        logger.log("Fetched recipes with nutrition data:",
+          processedData.map((r: any) => r.nutrition_data)
         )
         setRecipes(processedData)
       } catch (err: any) {
-        console.error("Error fetching recipes:", err)
+        logger.error("Error fetching recipes:", err)
         setError(err.message || "Failed to load recipes")
       } finally {
         setLoading(false)
@@ -107,7 +107,7 @@ export default function MyRecipesPage() {
 
       setRecipes(recipes.filter((recipe) => recipe.id !== id))
     } catch (err: any) {
-      console.error("Error deleting recipe:", err)
+      logger.error("Error deleting recipe:", err)
       setError(err.message || "Failed to delete recipe")
     } finally {
       setDeleting(null)

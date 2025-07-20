@@ -7,6 +7,7 @@ import { motion } from "framer-motion"
 import { ChefHat, Utensils, BookMarked, UserCheck } from "lucide-react"
 import { useEffect, useState } from "react"
 import { createClient } from "@/utils/supabase/client"
+import logger from "@/utils/logger"
 
 export default function Home() {
   const [authInitialized, setAuthInitialized] = useState(false)
@@ -18,7 +19,7 @@ export default function Home() {
         const supabase = createClient()
         await supabase.auth.getSession()
       } catch (error) {
-        console.error("Auth initialization error:", error)
+        logger.error("Auth initialization error:", error)
         // Continue anyway - we'll handle auth state in the navbar
       } finally {
         setAuthInitialized(true)
