@@ -12,6 +12,7 @@ interface IngredientInputProps {
   ingredients: string[]
   setIngredients: (ingredients: string[]) => void
   minIngredients?: number
+  placeholder?: string
 }
 
 export default function IngredientInput({ ingredients, setIngredients, minIngredients = 3 }: IngredientInputProps) {

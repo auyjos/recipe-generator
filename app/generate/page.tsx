@@ -10,7 +10,9 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { AlertDescription, Alert } from "@/components/ui/alert"
+import { Switch } from "@/components/ui/switch"
 import RecipeCard from "@/components/recipe-card"
+import { MacroInput } from "@/components/macro-input"
 import type { User } from "@supabase/supabase-js"
 import IngredientInput from "@/components/ingredient-input"
 import type { MealType } from "@/components/meal-type-selector"
@@ -67,6 +69,13 @@ export default function GenerateRecipePage() {
   const supabase = createClient()
   const [dietaryExclusions, setDietaryExclusions] = useState<string[]>([])
   const [exclusionInput, setExclusionInput] = useState("")
+  // Advanced mode state
+  const [isAdvancedMode, setIsAdvancedMode] = useState(false)
+  const [macroTargets, setMacroTargets] = useState({
+    protein: 30,
+    carbs: 40,
+    fat: 20
+  })
   const recipeRef = useRef<HTMLDivElement>(null)
 
   // Check authentication status
@@ -230,9 +239,10 @@ export default function GenerateRecipePage() {
 
       logger.recipe.generation("Final recipe object created:", newRecipe)
 
-      // Update the recipe state with the new recipe
+      // Update the recipe state and ingredients with the new/corrected recipe
       setRecipe(newRecipe)
-      logger.log("✅ Recipe state updated successfully")
+      setIngredients(newRecipe.ingredients)
+      logger.log("✅ Recipe state and ingredients updated successfully")
 
       // Increment the key to force a re-render of the recipe card
       setRecipeKey((prev) => prev + 1)
@@ -240,10 +250,10 @@ export default function GenerateRecipePage() {
       logger.recipe.nutrition("Starting nutrition data fetch for recipe:", recipeId)
       // Get enhanced nutritional information
       fetchNutritionData(
-        generatedRecipe.ingredients,
+        newRecipe.ingredients,
         preferences,
         mealType,
-        generatedRecipe.calories || calories,
+        newRecipe.calories || calories,
         recipeId, // Pass the preserved ID
       )
     } catch (err: any) {
@@ -258,6 +268,105 @@ export default function GenerateRecipePage() {
   // Regenerate recipe with same parameters
   const handleRegenerate = () => {
     generateRecipe(true)
+  }
+
+  // Generate recipe based on macro targets
+  const generateMacroRecipe = async (isRegeneration = false) => {
+    setLoading(true)
+    setError(null)
+    setSaveSuccess(false)
+
+    // Preserve the existing recipe ID during regeneration
+    const recipeId = isRegeneration && recipe ? recipe.id : `macro-recipe-${recipeIdCounter}`
+
+    if (isRegeneration) {
+      setRegenerating(true)
+    } else {
+      setRecipe(null)
+      setRecipeIdCounter(prev => prev + 1)
+    }
+
+    setNutritionError(null)
+
+    try {
+      const finalPreferences = [
+        preferences,
+        dietaryExclusions.length > 0 ? `Exclude: ${dietaryExclusions.join(", ")}` : "",
+      ].filter(Boolean).join(" ")
+
+      const requestPayload = {
+        protein: macroTargets.protein,
+        carbs: macroTargets.carbs,
+        fat: macroTargets.fat,
+        preferences: finalPreferences,
+        mealType,
+      }
+
+      logger.api.start("FRONTEND: Calling Generate Macro Recipe API", requestPayload)
+
+      const response = await fetch("/api/generate-recipe-macros", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(requestPayload),
+      })
+
+      if (!response.ok) {
+        const errorText = await response.text()
+        try {
+          const errorJson = JSON.parse(errorText)
+          throw new Error(errorJson.error || `Server error: ${response.status}`)
+        } catch {
+          throw new Error(`Server error: ${errorText || response.statusText || response.status}`)
+        }
+      }
+
+      const result = await response.json()
+
+      if (!result.success || !result.recipe) {
+        throw new Error(result.error || "Failed to generate macro-based recipe")
+      }
+
+      const generatedRecipe = result.recipe
+      const targetCalories = macroTargets.protein * 4 + macroTargets.carbs * 4 + macroTargets.fat * 9
+
+      const newRecipe = {
+        id: recipeId,
+        title: generatedRecipe.title,
+        calories: generatedRecipe.calories || targetCalories,
+        cooking_time: generatedRecipe.cooking_time || `${Math.floor(Math.random() * 30 + 15)} minutes`,
+        ingredients: generatedRecipe.ingredients,
+        instructions: generatedRecipe.instructions,
+        nutritionData: null,
+        markdown: generatedRecipe.markdown,
+        mealType: getMealTypeLabel(mealType),
+      }
+
+      setRecipe(newRecipe)
+      setIngredients(newRecipe.ingredients)
+      setRecipeKey((prev) => prev + 1)
+
+      // Get enhanced nutritional information
+      fetchNutritionData(
+        newRecipe.ingredients,
+        finalPreferences,
+        mealType,
+        newRecipe.calories || targetCalories,
+        recipeId,
+      )
+    } catch (err: any) {
+      logger.error("Macro recipe generation error:", err)
+      setError(err.message || "Failed to generate macro-based recipe. Please try again.")
+    } finally {
+      setLoading(false)
+      setRegenerating(false)
+    }
+  }
+
+  // Handle macro recipe regeneration
+  const handleMacroRegenerate = () => {
+    generateMacroRecipe(true)
   }
 
   // Fetch nutritional data from the API
@@ -521,6 +630,13 @@ export default function GenerateRecipePage() {
     setCalories(numValue)
   }
 
+  // Helper for calorie input border color
+  const getCalorieBorderClass = () => {
+    if (calorieError) return "border-red-500 focus:border-red-500"
+    if (calories >= 100 && calories <= 2000) return "border-green-500 focus:border-green-500"
+    return ""
+  }
+
   // Clear All functionality
   const clearAllInputs = () => {
     // Reset all form inputs to their default values
@@ -575,62 +691,90 @@ export default function GenerateRecipePage() {
                   </p>
                 </div>
               </div>
-            </div>            {/* Target Calories */}
-            <div className="mb-6">
-              <Label htmlFor="calories" className="block mb-2">
-                Target Calories
-              </Label>
-              <p className="text-xs text-muted-foreground mb-2">
-                Set your target calories (100 - 2000 calories)
-              </p>
-              <Input
-                id="calories"
-                type="number"
-                value={calories || ""}
-                onChange={(e) => handleCalorieChange(e.target.value)}
-                min={100}
-                max={2000}
-                step={50}
-                placeholder="Enter calories (100-2000)"
-                className={`bg-background border-input focus:border-primary transition-colors ${calorieError
-                  ? "border-destructive focus:border-destructive"
-                  : calories >= 100 && calories <= 2000
-                    ? "border-green-500 focus:border-green-500"
-                    : ""
-                  }`}
-              />
-              {calorieError && (
-                <div className="flex items-center mt-2 text-destructive text-sm">
-                  <svg className="w-4 h-4 mr-1 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                  </svg>
-                  {calorieError}
-                </div>
-              )}
-              {!calorieError && calories >= 100 && calories <= 2000 && (
-                <div className="flex items-center mt-2 text-green-600 text-sm">
-                  <svg className="w-4 h-4 mr-1 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                  </svg>
-                  Great! This calorie target looks good.
-                </div>
-              )}
             </div>
+
+            {/* Recipe Generation Mode Toggle */}
+            <div className="mb-6 p-4 border rounded-lg bg-card">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <Label htmlFor="advanced-mode" className="text-base font-medium">
+                    {isAdvancedMode ? "Advanced Mode" : "Ingredient Mode"}
+                  </Label>
+                  <p className="text-sm text-muted-foreground">
+                    {isAdvancedMode
+                      ? "Generate recipes based on precise macro targets"
+                      : "Generate recipes based on available ingredients"
+                    }
+                  </p>
+                </div>
+                <Switch
+                  id="advanced-mode"
+                  checked={isAdvancedMode}
+                  onCheckedChange={setIsAdvancedMode}
+                />
+              </div>
+            </div>
+
+            {/* Conditional Rendering based on mode */}
+            {isAdvancedMode ? (
+              // Advanced Mode: Macro Targets
+              <>
+                <MacroInput
+                  protein={macroTargets.protein}
+                  carbs={macroTargets.carbs}
+                  fat={macroTargets.fat}
+                  onProteinChange={(value) => setMacroTargets(prev => ({ ...prev, protein: value }))}
+                  onCarbsChange={(value) => setMacroTargets(prev => ({ ...prev, carbs: value }))}
+                  onFatChange={(value) => setMacroTargets(prev => ({ ...prev, fat: value }))}
+                  className="mb-6"
+                />
+              </>
+            ) : (
+              // Standard Mode: Ingredients and Calories
+              <>
+                {/* Target Calories */}
+                <div className="mb-6">
+                  <Label htmlFor="calories" className="block mb-2">
+                    Target Calories
+                  </Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    How many calories should this recipe have? (100-2000 kcal)
+                  </p>
+                  <Input
+                    id="calories"
+                    type="number"
+                    min="100"
+                    max="2000"
+                    step="50"
+                    value={calories || ""}
+                    onChange={(e) => handleCalorieChange(e.target.value)}
+                    className={
+                      calorieError
+                        ? "border-red-500 focus:border-red-500"
+                        : getCalorieBorderClass()
+                    }
+                  />
+                  {calorieError && <p className="text-red-500 text-xs mt-1">{calorieError}</p>}
+                </div>
+
+                {/* Ingredients */}
+                <div className="mb-6">
+                  <Label className="block mb-2">Ingredients</Label>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Add at least 3 ingredients you'd like to use in your recipe
+                  </p>
+                  <IngredientInput
+                    ingredients={ingredients}
+                    setIngredients={setIngredients}
+                    placeholder="Enter an ingredient (e.g., chicken breast, rice, broccoli)"
+                  />
+                </div>
+              </>
+            )}
 
             {/* Meal Type */}
             <div className="mb-6">
               <MealTypeSelector selectedMealType={mealType} onSelect={setMealType} />
-            </div>
-
-            {/* Ingredients */}
-            <div className="mb-6">
-              <div className="flex justify-between items-center mb-2">
-                <Label>Ingredients</Label>
-                <Button variant="outline" size="sm" className="text-xs">
-                  Use My Ingredients
-                </Button>
-              </div>
-              <IngredientInput ingredients={ingredients} setIngredients={setIngredients} minIngredients={3} />
             </div>
 
             {/* Dietary Exclusions */}
@@ -867,9 +1011,15 @@ export default function GenerateRecipePage() {
                 className="min-h-[60px] resize-none bg-background border-input focus:border-primary"
                 rows={2}
               />
-            </div>            <Button
-              onClick={() => generateRecipe(false)}
-              disabled={loading || ingredients.length < 3 || !!calorieError || calories < 100 || calories > 2000}
+            </div>
+            <Button
+              onClick={() => isAdvancedMode ? generateMacroRecipe(false) : generateRecipe(false)}
+              disabled={
+                loading ||
+                (isAdvancedMode
+                  ? macroTargets.protein < 5 || macroTargets.carbs < 5 || macroTargets.fat < 5
+                  : ingredients.length < 3 || !!calorieError || calories < 100 || calories > 2000)
+              }
               className="w-full bg-primary hover:bg-primary/90 text-primary-foreground disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {loading ? (
@@ -880,10 +1030,11 @@ export default function GenerateRecipePage() {
               ) : (
                 <>
                   <Sparkles className="mr-2 h-4 w-4" />
-                  Generate Recipe
+                  {isAdvancedMode ? "Generate Macro Recipe" : "Generate Recipe"}
                 </>
               )}
-            </Button>            {/* Clear All button */}
+            </Button>
+            {/* Clear All button */}
             <div className="mt-4">
               <Button
                 onClick={clearAllInputs}
@@ -940,7 +1091,7 @@ export default function GenerateRecipePage() {
                   <div className="mt-4 flex justify-end">
                     <Button
                       variant="outline"
-                      onClick={handleRegenerate}
+                      onClick={isAdvancedMode ? handleMacroRegenerate : handleRegenerate}
                       disabled={loading || regenerating}
                       className="flex items-center gap-2"
                     >
