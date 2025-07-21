@@ -5,8 +5,17 @@ import logger from "@/utils/logger"
 
 // Create a system prompt that guides Claude to generate recipes in a structured format
 const SYSTEM_PROMPT = `
-You are a professional chef assistant that creates recipes based on user ingredients, preferences, and meal type.
-Please generate a **single-serving** recipe with precise measurements.
+You are a professional chef assistant with access to comprehensive nutritional databases (USDA, FoodData Central, etc.). 
+You create recipes based on user ingredients, preferences, and meal type with scientifically accurate nutritional information.
+
+Please generate a **single-serving** recipe with precise measurements and validated nutritional data.
+
+CRITICAL NUTRITIONAL ACCURACY REQUIREMENTS:
+- Before calculating recipe nutrition, look up each ingredient in USDA FoodData Central or equivalent nutritional databases
+- Use the exact nutritional values per 100g for each ingredient from authoritative sources
+- Calculate the recipe's total nutrition based on actual ingredient quantities and their verified nutritional profiles
+- Ensure mathematical precision: total calories MUST equal (protein×4 + carbs×4 + fat×9) within 1-2 calories
+- Cross-reference multiple sources when uncertain about ingredient nutritional data
 
 Always format your response in markdown with the following structure:
 # [Recipe Title]
@@ -21,7 +30,7 @@ Always format your response in markdown with the following structure:
 2. [Step 2]
 ...
 
-## Nutrition (Estimated)
+## Nutrition (Validated from USDA/FoodData Central)
 - Calories: [calories] kcal
 - Protein: [protein]g
 - Carbs: [carbs]g
@@ -32,14 +41,18 @@ Always format your response in markdown with the following structure:
 
 IMPORTANT GUIDELINES:
 1. ALWAYS specify ingredient quantities in grams for ALL ingredients when possible
-2. Don't add any type of oil unless the user specifies it.
-2. Ensure the nutritional information is mathematically consistent with the ingredient quantities
-3. The total calories should approximately equal: (protein × 4) + (carbs × 4) + (fat × 9)
-4. Be creative but practical, focusing on recipes that are delicious and achievable
-5. Suggest a cooking time that is realistic for the recipe
-6. For liquids, use milliliters (ml) instead of grams when appropriate
-7. **If the provided ingredients sum to less than the target calories**, suggest **additional ingredients** that complement the existing ones—specifying their quantities—so that the total calories falls within ±5% of the target.
-8. Respect any stated preferences or dietary restrictions when adding ingredients.
+2. Don't add any type of oil unless the user specifies it
+3. Use your knowledge of USDA FoodData Central and other nutritional databases to get accurate values
+4. Calculate nutrition by: (ingredient_quantity_in_grams / 100) × nutrition_per_100g_from_database
+5. Verify that (protein×4 + carbs×4 + fat×9) equals the stated calories within 2 kcal tolerance
+6. Be creative but practical, focusing on recipes that are delicious and achievable
+7. Suggest a cooking time that is realistic for the recipe
+8. For liquids, use milliliters (ml) instead of grams when appropriate
+9. **If the provided ingredients sum to less than the target calories**, suggest **additional ingredients** (with quantities) to bring the total within ±3% of the target.
+10. **If the provided ingredients sum to more than the target calories**, adjust ingredient quantities (or remove/swap ingredients) so that the total also falls within ±3% of the target.
+11. Respect any stated preferences or dietary restrictions when adding, removing, or scaling ingredients.
+10. Respect any stated preferences or dietary restrictions when adding ingredients
+11. When in doubt about nutritional values, state your source (e.g., "USDA FDC ID: 123456") in the response
 `
 
 export async function POST(request: Request) {
@@ -72,7 +85,9 @@ export async function POST(request: Request) {
     Target calories: approximately ${calories} kcal per serving.
     If your calorie total from the listed ingredients is below this, feel free to suggest extra complementary ingredients (with quantities) to meet the target.
 
-    Please create a recipe that uses these ingredients and meets my preferences.
+    IMPORTANT: Please use your knowledge of USDA FoodData Central and other nutritional databases to ensure accurate nutritional calculations. Look up each ingredient's verified nutritional profile and calculate the recipe's total nutrition based on actual ingredient quantities and their database values.
+
+    Please create a recipe that uses these ingredients and meets my preferences with scientifically accurate nutrition information.
     `
 
     try {
@@ -280,25 +295,25 @@ function parseRecipeMarkdown(markdown: string) {
         .map((line) => line.replace(/^\d+\.\s*/, "").trim())
     }
 
-    // Extract calories
+    // Extract calories - check both formats
     const caloriesMatch = markdown.match(/Calories:\s*(\d+)\s*kcal/)
     if (caloriesMatch && caloriesMatch[1]) {
       calories = Number.parseInt(caloriesMatch[1], 10)
     }
 
-    // Extract protein
+    // Extract protein - look for validated sources
     const proteinMatch = markdown.match(/Protein:\s*(\d+(?:\.\d+)?)\s*g/)
     if (proteinMatch && proteinMatch[1]) {
       protein = Number.parseFloat(proteinMatch[1])
     }
 
-    // Extract carbs
+    // Extract carbs - look for validated sources
     const carbsMatch = markdown.match(/Carbs:\s*(\d+(?:\.\d+)?)\s*g/)
     if (carbsMatch && carbsMatch[1]) {
       carbs = Number.parseFloat(carbsMatch[1])
     }
 
-    // Extract fat
+    // Extract fat - look for validated sources
     const fatMatch = markdown.match(/Fat:\s*(\d+(?:\.\d+)?)\s*g/)
     if (fatMatch && fatMatch[1]) {
       fat = Number.parseFloat(fatMatch[1])
